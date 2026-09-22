@@ -1,0 +1,763 @@
+{
+  "checkedAt": "2026-09-22T03:27:52.481Z",
+  "profile": "C:\\Users\\Juper\\AppData\\Local\\Temp\\ayuda-dashboard-check-1790047624086",
+  "results": [
+    {
+      "pass": true,
+      "label": "layout empty HOUSEHOLD/overview 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data empty HOUSEHOLD/overview"
+    },
+    {
+      "pass": true,
+      "label": "layout empty HOUSEHOLD/request 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data empty HOUSEHOLD/request"
+    },
+    {
+      "pass": true,
+      "label": "layout empty HOUSEHOLD/history 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data empty HOUSEHOLD/history"
+    },
+    {
+      "pass": true,
+      "label": "layout empty HOUSEHOLD/profile 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data empty HOUSEHOLD/profile"
+    },
+    {
+      "pass": true,
+      "label": "layout empty BARANGAY_OFFICIAL/overview 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data empty BARANGAY_OFFICIAL/overview"
+    },
+    {
+      "pass": true,
+      "label": "layout empty BARANGAY_OFFICIAL/accounts 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data empty BARANGAY_OFFICIAL/accounts"
+    },
+    {
+      "pass": true,
+      "label": "layout empty BARANGAY_OFFICIAL/pending 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data empty BARANGAY_OFFICIAL/pending"
+    },
+    {
+      "pass": true,
+      "label": "layout empty BARANGAY_OFFICIAL/all 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data empty BARANGAY_OFFICIAL/all"
+    },
+    {
+      "pass": true,
+      "label": "layout empty BARANGAY_OFFICIAL/profile 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data empty BARANGAY_OFFICIAL/profile"
+    },
+    {
+      "pass": true,
+      "label": "layout empty DONOR/overview 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data empty DONOR/overview"
+    },
+    {
+      "pass": true,
+      "label": "layout empty DONOR/browse 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data empty DONOR/browse"
+    },
+    {
+      "pass": true,
+      "label": "layout empty DONOR/donations 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data empty DONOR/donations"
+    },
+    {
+      "pass": true,
+      "label": "layout empty DONOR/profile 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data empty DONOR/profile"
+    },
+    {
+      "pass": true,
+      "label": "layout empty DSWS_ADMIN/overview 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data empty DSWS_ADMIN/overview"
+    },
+    {
+      "pass": true,
+      "label": "layout empty DSWS_ADMIN/officials 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data empty DSWS_ADMIN/officials"
+    },
+    {
+      "pass": true,
+      "label": "layout empty DSWS_ADMIN/barangays 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data empty DSWS_ADMIN/barangays"
+    },
+    {
+      "pass": true,
+      "label": "layout empty DSWS_ADMIN/requests 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data empty DSWS_ADMIN/requests"
+    },
+    {
+      "pass": true,
+      "label": "layout empty DSWS_ADMIN/reports 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data empty DSWS_ADMIN/reports"
+    },
+    {
+      "pass": true,
+      "label": "layout empty HOUSEHOLD/overview 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout empty HOUSEHOLD/request 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout empty HOUSEHOLD/history 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout empty HOUSEHOLD/profile 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout empty BARANGAY_OFFICIAL/overview 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout empty BARANGAY_OFFICIAL/accounts 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout empty BARANGAY_OFFICIAL/pending 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout empty BARANGAY_OFFICIAL/all 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout empty BARANGAY_OFFICIAL/profile 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout empty DONOR/overview 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout empty DONOR/browse 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout empty DONOR/donations 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout empty DONOR/profile 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout empty DSWS_ADMIN/overview 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout empty DSWS_ADMIN/officials 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout empty DSWS_ADMIN/barangays 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout empty DSWS_ADMIN/requests 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout empty DSWS_ADMIN/reports 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated HOUSEHOLD/overview 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data populated HOUSEHOLD/overview"
+    },
+    {
+      "pass": true,
+      "label": "layout populated HOUSEHOLD/request 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data populated HOUSEHOLD/request"
+    },
+    {
+      "pass": true,
+      "label": "layout populated HOUSEHOLD/history 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data populated HOUSEHOLD/history"
+    },
+    {
+      "pass": true,
+      "label": "layout populated HOUSEHOLD/profile 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data populated HOUSEHOLD/profile"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/overview 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data populated BARANGAY_OFFICIAL/overview"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/accounts 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data populated BARANGAY_OFFICIAL/accounts"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/pending 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data populated BARANGAY_OFFICIAL/pending"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/all 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data populated BARANGAY_OFFICIAL/all"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/profile 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data populated BARANGAY_OFFICIAL/profile"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DONOR/overview 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data populated DONOR/overview"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DONOR/browse 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data populated DONOR/browse"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DONOR/donations 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data populated DONOR/donations"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DONOR/profile 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data populated DONOR/profile"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/overview 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data populated DSWS_ADMIN/overview"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/officials 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data populated DSWS_ADMIN/officials"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/barangays 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data populated DSWS_ADMIN/barangays"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/requests 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data populated DSWS_ADMIN/requests"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/reports 1440px"
+    },
+    {
+      "pass": true,
+      "label": "preserved controls/data populated DSWS_ADMIN/reports"
+    },
+    {
+      "pass": true,
+      "label": "layout populated HOUSEHOLD/overview 1024px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated HOUSEHOLD/request 1024px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated HOUSEHOLD/history 1024px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated HOUSEHOLD/profile 1024px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/overview 1024px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/accounts 1024px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/pending 1024px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/all 1024px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/profile 1024px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DONOR/overview 1024px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DONOR/browse 1024px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DONOR/donations 1024px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DONOR/profile 1024px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/overview 1024px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/officials 1024px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/barangays 1024px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/requests 1024px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/reports 1024px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated HOUSEHOLD/overview 768px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated HOUSEHOLD/request 768px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated HOUSEHOLD/history 768px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated HOUSEHOLD/profile 768px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/overview 768px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/accounts 768px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/pending 768px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/all 768px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/profile 768px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DONOR/overview 768px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DONOR/browse 768px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DONOR/donations 768px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DONOR/profile 768px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/overview 768px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/officials 768px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/barangays 768px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/requests 768px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/reports 768px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated HOUSEHOLD/overview 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated HOUSEHOLD/request 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated HOUSEHOLD/history 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated HOUSEHOLD/profile 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/overview 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/accounts 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/pending 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/all 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/profile 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DONOR/overview 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DONOR/browse 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DONOR/donations 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DONOR/profile 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/overview 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/officials 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/barangays 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/requests 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/reports 390px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated HOUSEHOLD/overview 320px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated HOUSEHOLD/request 320px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated HOUSEHOLD/history 320px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated HOUSEHOLD/profile 320px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/overview 320px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/accounts 320px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/pending 320px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/all 320px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated BARANGAY_OFFICIAL/profile 320px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DONOR/overview 320px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DONOR/browse 320px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DONOR/donations 320px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DONOR/profile 320px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/overview 320px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/officials 320px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/barangays 320px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/requests 320px"
+    },
+    {
+      "pass": true,
+      "label": "layout populated DSWS_ADMIN/reports 320px"
+    },
+    {
+      "pass": true,
+      "label": "layout PENDING HOUSEHOLD/overview 320px"
+    },
+    {
+      "pass": true,
+      "label": "preserved household PENDING/overview"
+    },
+    {
+      "pass": true,
+      "label": "layout PENDING HOUSEHOLD/request 320px"
+    },
+    {
+      "pass": true,
+      "label": "preserved household PENDING/request"
+    },
+    {
+      "pass": true,
+      "label": "layout PENDING HOUSEHOLD/history 320px"
+    },
+    {
+      "pass": true,
+      "label": "preserved household PENDING/history"
+    },
+    {
+      "pass": true,
+      "label": "layout PENDING HOUSEHOLD/profile 320px"
+    },
+    {
+      "pass": true,
+      "label": "preserved household PENDING/profile"
+    },
+    {
+      "pass": true,
+      "label": "layout REJECTED HOUSEHOLD/overview 320px"
+    },
+    {
+      "pass": true,
+      "label": "preserved household REJECTED/overview"
+    },
+    {
+      "pass": true,
+      "label": "layout REJECTED HOUSEHOLD/request 320px"
+    },
+    {
+      "pass": true,
+      "label": "preserved household REJECTED/request"
+    },
+    {
+      "pass": true,
+      "label": "layout REJECTED HOUSEHOLD/history 320px"
+    },
+    {
+      "pass": true,
+      "label": "preserved household REJECTED/history"
+    },
+    {
+      "pass": true,
+      "label": "layout REJECTED HOUSEHOLD/profile 320px"
+    },
+    {
+      "pass": true,
+      "label": "preserved household REJECTED/profile"
+    },
+    {
+      "pass": true,
+      "label": "Donor filters retain selection and correct result"
+    },
+    {
+      "pass": true,
+      "label": "Donor filtered empty state"
+    },
+    {
+      "pass": true,
+      "label": "Donor pledge dialog opens"
+    },
+    {
+      "pass": true,
+      "label": "Pledge submit retains pending verification"
+    },
+    {
+      "pass": true,
+      "label": "Barangay account approval button works"
+    },
+    {
+      "pass": true,
+      "label": "Barangay request approval retains active pledge"
+    },
+    {
+      "pass": true,
+      "label": "Barangay general donation approval works"
+    },
+    {
+      "pass": true,
+      "label": "Household request details open"
+    },
+    {
+      "pass": true,
+      "label": "Household request form keeps validation and submit binding"
+    },
+    {
+      "pass": true,
+      "label": "layout long profile values HOUSEHOLD/profile 320px"
+    },
+    {
+      "pass": true,
+      "label": "No browser JavaScript errors"
+    }
+  ],
+  "errors": []
+}

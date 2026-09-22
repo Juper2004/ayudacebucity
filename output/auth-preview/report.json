@@ -1,0 +1,494 @@
+{
+  "layouts": [
+    {
+      "name": "register-1056",
+      "width": 1056,
+      "height": 593,
+      "scrollWidth": 1041,
+      "scrollHeight": 666,
+      "card": {
+        "x": 541.484375,
+        "y": 67.65989685058594,
+        "width": 440,
+        "height": 568.28125
+      },
+      "form": {
+        "x": 568.484375,
+        "y": 262.4098815917969,
+        "width": 386,
+        "height": 315.5625305175781
+      },
+      "heading": "Join AYUDA CEBU",
+      "brokenImages": [],
+      "overflows": []
+    },
+    {
+      "name": "login-1056",
+      "width": 1056,
+      "height": 593,
+      "scrollWidth": 1041,
+      "scrollHeight": 595,
+      "card": {
+        "x": 541.484375,
+        "y": 85.32340240478516,
+        "width": 440,
+        "height": 462.5625305175781
+      },
+      "form": {
+        "x": 568.484375,
+        "y": 242.1359100341797,
+        "width": 386,
+        "height": 239.78123474121094
+      },
+      "heading": "Welcome back",
+      "brokenImages": [],
+      "overflows": []
+    },
+    {
+      "name": "register-1440",
+      "width": 1440,
+      "height": 900,
+      "scrollWidth": 1425,
+      "scrollHeight": 905,
+      "card": {
+        "x": 822.375,
+        "y": 148.16160583496094,
+        "width": 440,
+        "height": 649.328125
+      },
+      "form": {
+        "x": 851.375,
+        "y": 362.95849609375,
+        "width": 382,
+        "height": 365.5625
+      },
+      "heading": "Join AYUDA CEBU",
+      "brokenImages": [],
+      "overflows": []
+    },
+    {
+      "name": "login-1440",
+      "width": 1440,
+      "height": 900,
+      "scrollWidth": 1425,
+      "scrollHeight": 903,
+      "card": {
+        "x": 822.375,
+        "y": 227.45697021484375,
+        "width": 440,
+        "height": 487.609375
+      },
+      "form": {
+        "x": 851.375,
+        "y": 391.31634521484375,
+        "width": 382,
+        "height": 248.78125
+      },
+      "heading": "Welcome back",
+      "brokenImages": [],
+      "overflows": []
+    },
+    {
+      "name": "login-mobile-390",
+      "width": 390,
+      "height": 844,
+      "scrollWidth": 390,
+      "scrollHeight": 844,
+      "card": {
+        "x": 16,
+        "y": 218.78125,
+        "width": 358,
+        "height": 480.4375
+      },
+      "form": {
+        "x": 37,
+        "y": 371.46875,
+        "width": 316,
+        "height": 256.78125
+      },
+      "heading": "Welcome back",
+      "brokenImages": [],
+      "overflows": []
+    },
+    {
+      "name": "register-mobile-390",
+      "width": 390,
+      "height": 844,
+      "scrollWidth": 375,
+      "scrollHeight": 846,
+      "card": {
+        "x": 16,
+        "y": 124.61837005615234,
+        "width": 343,
+        "height": 672.984375
+      },
+      "form": {
+        "x": 37,
+        "y": 350.0715026855469,
+        "width": 301,
+        "height": 381.5624694824219
+      },
+      "heading": "Join AYUDA CEBU",
+      "brokenImages": [],
+      "overflows": []
+    },
+    {
+      "name": "login-mobile-320",
+      "width": 320,
+      "height": 640,
+      "scrollWidth": 320,
+      "scrollHeight": 642,
+      "card": {
+        "x": 16,
+        "y": 108.47936248779297,
+        "width": 288,
+        "height": 501.265625
+      },
+      "form": {
+        "x": 37,
+        "y": 281.9949951171875,
+        "width": 246,
+        "height": 256.78125
+      },
+      "heading": "Welcome back",
+      "brokenImages": [],
+      "overflows": []
+    },
+    {
+      "name": "register-mobile-320",
+      "width": 320,
+      "height": 640,
+      "scrollWidth": 320,
+      "scrollHeight": 846,
+      "card": {
+        "x": 16,
+        "y": 108.10216522216797,
+        "width": 288,
+        "height": 705.921875
+      },
+      "form": {
+        "x": 37,
+        "y": 366.4927978515625,
+        "width": 246,
+        "height": 381.5625
+      },
+      "heading": "Join AYUDA CEBU",
+      "brokenImages": [],
+      "overflows": []
+    },
+    {
+      "name": "household-register-1056",
+      "width": 1056,
+      "height": 593,
+      "scrollWidth": 1041,
+      "scrollHeight": 804,
+      "card": {
+        "x": 541.484375,
+        "y": 68.63037872314453,
+        "width": 440,
+        "height": 705.0625
+      },
+      "form": {
+        "x": 568.484375,
+        "y": 263.38037109375,
+        "width": 386,
+        "height": 452.34375
+      },
+      "heading": "Join AYUDA CEBU",
+      "brokenImages": [],
+      "overflows": []
+    },
+    {
+      "name": "household-register-mobile-320",
+      "width": 320,
+      "height": 640,
+      "scrollWidth": 320,
+      "scrollHeight": 1011,
+      "card": {
+        "x": 16,
+        "y": 106,
+        "width": 288,
+        "height": 872.59375
+      },
+      "form": {
+        "x": 37,
+        "y": 364.390625,
+        "width": 246,
+        "height": 548.234375
+      },
+      "heading": "Join AYUDA CEBU",
+      "brokenImages": [],
+      "overflows": []
+    },
+    {
+      "name": "recovery-1056",
+      "width": 1056,
+      "height": 593,
+      "scrollWidth": 1041,
+      "scrollHeight": 596,
+      "card": {
+        "x": 541.484375,
+        "y": 153.25450134277344,
+        "width": 440,
+        "height": 329
+      },
+      "form": {
+        "x": 568.484375,
+        "y": 313.8951110839844,
+        "width": 386,
+        "height": 110.390625
+      },
+      "heading": "Forgot password?",
+      "brokenImages": [],
+      "overflows": []
+    },
+    {
+      "name": "recovery-mobile-320",
+      "width": 320,
+      "height": 640,
+      "scrollWidth": 320,
+      "scrollHeight": 640,
+      "card": {
+        "x": 16,
+        "y": 156.296875,
+        "width": 288,
+        "height": 401.421875
+      },
+      "form": {
+        "x": 37,
+        "y": 360.46875,
+        "width": 246,
+        "height": 131.28125
+      },
+      "heading": "Forgot password?",
+      "brokenImages": [],
+      "overflows": []
+    },
+    {
+      "name": "reset-mobile-320",
+      "width": 320,
+      "height": 640,
+      "scrollWidth": 320,
+      "scrollHeight": 816,
+      "card": {
+        "x": 16,
+        "y": 114,
+        "width": 288,
+        "height": 669.84375
+      },
+      "form": {
+        "x": 37,
+        "y": 419.703125,
+        "width": 246,
+        "height": 298.171875
+      },
+      "heading": "Create a new password",
+      "brokenImages": [],
+      "overflows": []
+    }
+  ],
+  "checks": [
+    {
+      "message": "register-1056: no horizontal page overflow",
+      "passed": true
+    },
+    {
+      "message": "register-1056: all form content inside viewport width",
+      "passed": true
+    },
+    {
+      "message": "register-1056: all images loaded",
+      "passed": true
+    },
+    {
+      "message": "login-1056: no horizontal page overflow",
+      "passed": true
+    },
+    {
+      "message": "login-1056: all form content inside viewport width",
+      "passed": true
+    },
+    {
+      "message": "login-1056: all images loaded",
+      "passed": true
+    },
+    {
+      "message": "register-1440: no horizontal page overflow",
+      "passed": true
+    },
+    {
+      "message": "register-1440: all form content inside viewport width",
+      "passed": true
+    },
+    {
+      "message": "register-1440: all images loaded",
+      "passed": true
+    },
+    {
+      "message": "login-1440: no horizontal page overflow",
+      "passed": true
+    },
+    {
+      "message": "login-1440: all form content inside viewport width",
+      "passed": true
+    },
+    {
+      "message": "login-1440: all images loaded",
+      "passed": true
+    },
+    {
+      "message": "login-mobile-390: no horizontal page overflow",
+      "passed": true
+    },
+    {
+      "message": "login-mobile-390: all form content inside viewport width",
+      "passed": true
+    },
+    {
+      "message": "login-mobile-390: all images loaded",
+      "passed": true
+    },
+    {
+      "message": "register-mobile-390: no horizontal page overflow",
+      "passed": true
+    },
+    {
+      "message": "register-mobile-390: all form content inside viewport width",
+      "passed": true
+    },
+    {
+      "message": "register-mobile-390: all images loaded",
+      "passed": true
+    },
+    {
+      "message": "login-mobile-320: no horizontal page overflow",
+      "passed": true
+    },
+    {
+      "message": "login-mobile-320: all form content inside viewport width",
+      "passed": true
+    },
+    {
+      "message": "login-mobile-320: all images loaded",
+      "passed": true
+    },
+    {
+      "message": "register-mobile-320: no horizontal page overflow",
+      "passed": true
+    },
+    {
+      "message": "register-mobile-320: all form content inside viewport width",
+      "passed": true
+    },
+    {
+      "message": "register-mobile-320: all images loaded",
+      "passed": true
+    },
+    {
+      "message": "household-register-1056: no horizontal page overflow",
+      "passed": true
+    },
+    {
+      "message": "household-register-1056: all form content inside viewport width",
+      "passed": true
+    },
+    {
+      "message": "household-register-1056: all images loaded",
+      "passed": true
+    },
+    {
+      "message": "Household registration reveals barangay/contact",
+      "passed": true
+    },
+    {
+      "message": "household-register-mobile-320: no horizontal page overflow",
+      "passed": true
+    },
+    {
+      "message": "household-register-mobile-320: all form content inside viewport width",
+      "passed": true
+    },
+    {
+      "message": "household-register-mobile-320: all images loaded",
+      "passed": true
+    },
+    {
+      "message": "Donor registration hides barangay/contact",
+      "passed": true
+    },
+    {
+      "message": "Official selection reveals barangay",
+      "passed": true
+    },
+    {
+      "message": "Password toggle reveals text without submitting",
+      "passed": true
+    },
+    {
+      "message": "Password toggle hides text and updates accessible label",
+      "passed": true
+    },
+    {
+      "message": "Invalid login remains on form with feedback",
+      "passed": true
+    },
+    {
+      "message": "Seeded DSWS account login navigates to dashboard",
+      "passed": true
+    },
+    {
+      "message": "Donor registration creates approved prototype account",
+      "passed": true
+    },
+    {
+      "message": "recovery-1056: no horizontal page overflow",
+      "passed": true
+    },
+    {
+      "message": "recovery-1056: all form content inside viewport width",
+      "passed": true
+    },
+    {
+      "message": "recovery-1056: all images loaded",
+      "passed": true
+    },
+    {
+      "message": "recovery-mobile-320: no horizontal page overflow",
+      "passed": true
+    },
+    {
+      "message": "recovery-mobile-320: all form content inside viewport width",
+      "passed": true
+    },
+    {
+      "message": "recovery-mobile-320: all images loaded",
+      "passed": true
+    },
+    {
+      "message": "reset-mobile-320: no horizontal page overflow",
+      "passed": true
+    },
+    {
+      "message": "reset-mobile-320: all form content inside viewport width",
+      "passed": true
+    },
+    {
+      "message": "reset-mobile-320: all images loaded",
+      "passed": true
+    },
+    {
+      "message": "Password recovery saves updated prototype password",
+      "passed": true
+    },
+    {
+      "message": "No browser JavaScript exceptions",
+      "passed": true
+    },
+    {
+      "message": "No failed resource requests",
+      "passed": true
+    }
+  ],
+  "exceptions": [],
+  "failedRequests": []
+}

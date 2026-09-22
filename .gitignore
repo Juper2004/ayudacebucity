@@ -1,0 +1,13 @@
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+
+# Dependencies, account database, and runtime output
+node_modules/
+data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.log
+coverage/

@@ -1,0 +1,66 @@
+{
+  "checkedAt": "2026-09-22T13:49:59.873Z",
+  "results": [
+    {
+      "pass": true,
+      "label": "Donor registration through the real form"
+    },
+    {
+      "pass": true,
+      "label": "Login uses the server and creates no browser credentials"
+    },
+    {
+      "pass": true,
+      "label": "Session persists after reload"
+    },
+    {
+      "pass": true,
+      "label": "Forgot-password form reaches the injected email provider"
+    },
+    {
+      "pass": true,
+      "label": "Code is absent from page and browser storage"
+    },
+    {
+      "pass": true,
+      "label": "Resend cooldown is visible"
+    },
+    {
+      "pass": true,
+      "label": "Reset layout fits 1440px"
+    },
+    {
+      "pass": true,
+      "label": "Reset layout fits 390px"
+    },
+    {
+      "pass": true,
+      "label": "Reset page survives reload without saving the code"
+    },
+    {
+      "pass": true,
+      "label": "Reset form changes password and new password logs in"
+    },
+    {
+      "pass": true,
+      "label": "Old password is rejected"
+    },
+    {
+      "pass": true,
+      "label": "Pending household can log in but cannot request assistance"
+    },
+    {
+      "pass": true,
+      "label": "Administrator creates an official through the real form"
+    },
+    {
+      "pass": true,
+      "label": "Official approves household using the server"
+    },
+    {
+      "pass": true,
+      "label": "No JavaScript runtime errors"
+    }
+  ],
+  "errors": []
+}

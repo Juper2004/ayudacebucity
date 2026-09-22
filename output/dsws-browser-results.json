@@ -1,0 +1,972 @@
+{
+  "profile": "C:\\Users\\Juper\\OneDrive\\Desktop\\AYUDA 2.0\\output\\dsws-check-profile-1789995658241",
+  "checkedAt": "2026-09-21T13:01:08.143Z",
+  "results": [
+    {
+      "kind": "layout",
+      "tab": "overview",
+      "width": 1440,
+      "state": "empty",
+      "pass": true,
+      "heading": "Citywide relief overview",
+      "hash": "#/dsws/overview",
+      "active": [
+        {
+          "text": "Home",
+          "action": "goDash(\"DSWS_ADMIN\",\"overview\")"
+        },
+        {
+          "text": "Home",
+          "action": "goDash(\"DSWS_ADMIN\",\"overview\")"
+        }
+      ],
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "officials",
+      "width": 1440,
+      "state": "empty",
+      "pass": true,
+      "heading": "Barangay Officials",
+      "hash": "#/dsws/officials",
+      "active": [
+        {
+          "text": "Barangay Officials",
+          "action": "goDash(\"DSWS_ADMIN\",\"officials\")"
+        },
+        {
+          "text": "Officials",
+          "action": "goDash(\"DSWS_ADMIN\",\"officials\")"
+        }
+      ],
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "barangays",
+      "width": 1440,
+      "state": "empty",
+      "pass": true,
+      "heading": "Barangay monitoring",
+      "hash": "#/dsws/barangays",
+      "active": [
+        {
+          "text": "Barangays",
+          "action": "goDash(\"DSWS_ADMIN\",\"barangays\")"
+        },
+        {
+          "text": "Barangays",
+          "action": "goDash(\"DSWS_ADMIN\",\"barangays\")"
+        }
+      ],
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "requests",
+      "width": 1440,
+      "state": "empty",
+      "pass": true,
+      "heading": "Citywide requests",
+      "hash": "#/dsws/requests",
+      "active": [
+        {
+          "text": "Requests",
+          "action": "goDash(\"DSWS_ADMIN\",\"requests\")"
+        },
+        {
+          "text": "Requests",
+          "action": "goDash(\"DSWS_ADMIN\",\"requests\")"
+        }
+      ],
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "reports",
+      "width": 1440,
+      "state": "empty",
+      "pass": true,
+      "heading": "DSWS reports",
+      "hash": "#/dsws/reports",
+      "active": [
+        {
+          "text": "Reports",
+          "action": "goDash(\"DSWS_ADMIN\",\"reports\")"
+        },
+        {
+          "text": "Reports",
+          "action": "goDash(\"DSWS_ADMIN\",\"reports\")"
+        }
+      ],
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "overview",
+      "width": 390,
+      "state": "empty",
+      "pass": false,
+      "heading": "Citywide relief overview",
+      "hash": "#/dsws/overview",
+      "active": [
+        {
+          "text": "Home",
+          "action": "goDash(\"DSWS_ADMIN\",\"overview\")"
+        },
+        {
+          "text": "Home",
+          "action": "goDash(\"DSWS_ADMIN\",\"overview\")"
+        }
+      ],
+      "viewport": 390,
+      "documentWidth": 400,
+      "bodyWidth": 400,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "officials",
+      "width": 390,
+      "state": "empty",
+      "pass": false,
+      "heading": "Barangay Officials",
+      "hash": "#/dsws/officials",
+      "active": [
+        {
+          "text": "Barangay Officials",
+          "action": "goDash(\"DSWS_ADMIN\",\"officials\")"
+        },
+        {
+          "text": "Officials",
+          "action": "goDash(\"DSWS_ADMIN\",\"officials\")"
+        }
+      ],
+      "viewport": 390,
+      "documentWidth": 400,
+      "bodyWidth": 400,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "barangays",
+      "width": 390,
+      "state": "empty",
+      "pass": false,
+      "heading": "Barangay monitoring",
+      "hash": "#/dsws/barangays",
+      "active": [
+        {
+          "text": "Barangays",
+          "action": "goDash(\"DSWS_ADMIN\",\"barangays\")"
+        },
+        {
+          "text": "Barangays",
+          "action": "goDash(\"DSWS_ADMIN\",\"barangays\")"
+        }
+      ],
+      "viewport": 390,
+      "documentWidth": 400,
+      "bodyWidth": 400,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "requests",
+      "width": 390,
+      "state": "empty",
+      "pass": false,
+      "heading": "Citywide requests",
+      "hash": "#/dsws/requests",
+      "active": [
+        {
+          "text": "Requests",
+          "action": "goDash(\"DSWS_ADMIN\",\"requests\")"
+        },
+        {
+          "text": "Requests",
+          "action": "goDash(\"DSWS_ADMIN\",\"requests\")"
+        }
+      ],
+      "viewport": 390,
+      "documentWidth": 400,
+      "bodyWidth": 400,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "reports",
+      "width": 390,
+      "state": "empty",
+      "pass": false,
+      "heading": "DSWS reports",
+      "hash": "#/dsws/reports",
+      "active": [
+        {
+          "text": "Reports",
+          "action": "goDash(\"DSWS_ADMIN\",\"reports\")"
+        },
+        {
+          "text": "Reports",
+          "action": "goDash(\"DSWS_ADMIN\",\"reports\")"
+        }
+      ],
+      "viewport": 390,
+      "documentWidth": 400,
+      "bodyWidth": 400,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "overview",
+      "width": 320,
+      "state": "empty",
+      "pass": false,
+      "heading": "Citywide relief overview",
+      "hash": "#/dsws/overview",
+      "active": [
+        {
+          "text": "Home",
+          "action": "goDash(\"DSWS_ADMIN\",\"overview\")"
+        },
+        {
+          "text": "Home",
+          "action": "goDash(\"DSWS_ADMIN\",\"overview\")"
+        }
+      ],
+      "viewport": 320,
+      "documentWidth": 330,
+      "bodyWidth": 330,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "officials",
+      "width": 320,
+      "state": "empty",
+      "pass": false,
+      "heading": "Barangay Officials",
+      "hash": "#/dsws/officials",
+      "active": [
+        {
+          "text": "Barangay Officials",
+          "action": "goDash(\"DSWS_ADMIN\",\"officials\")"
+        },
+        {
+          "text": "Officials",
+          "action": "goDash(\"DSWS_ADMIN\",\"officials\")"
+        }
+      ],
+      "viewport": 320,
+      "documentWidth": 330,
+      "bodyWidth": 330,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "barangays",
+      "width": 320,
+      "state": "empty",
+      "pass": false,
+      "heading": "Barangay monitoring",
+      "hash": "#/dsws/barangays",
+      "active": [
+        {
+          "text": "Barangays",
+          "action": "goDash(\"DSWS_ADMIN\",\"barangays\")"
+        },
+        {
+          "text": "Barangays",
+          "action": "goDash(\"DSWS_ADMIN\",\"barangays\")"
+        }
+      ],
+      "viewport": 320,
+      "documentWidth": 330,
+      "bodyWidth": 330,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "requests",
+      "width": 320,
+      "state": "empty",
+      "pass": false,
+      "heading": "Citywide requests",
+      "hash": "#/dsws/requests",
+      "active": [
+        {
+          "text": "Requests",
+          "action": "goDash(\"DSWS_ADMIN\",\"requests\")"
+        },
+        {
+          "text": "Requests",
+          "action": "goDash(\"DSWS_ADMIN\",\"requests\")"
+        }
+      ],
+      "viewport": 320,
+      "documentWidth": 330,
+      "bodyWidth": 330,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "reports",
+      "width": 320,
+      "state": "empty",
+      "pass": false,
+      "heading": "DSWS reports",
+      "hash": "#/dsws/reports",
+      "active": [
+        {
+          "text": "Reports",
+          "action": "goDash(\"DSWS_ADMIN\",\"reports\")"
+        },
+        {
+          "text": "Reports",
+          "action": "goDash(\"DSWS_ADMIN\",\"reports\")"
+        }
+      ],
+      "viewport": 320,
+      "documentWidth": 330,
+      "bodyWidth": 330,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "overview",
+      "width": 1440,
+      "state": "populated",
+      "pass": true,
+      "heading": "Citywide relief overview",
+      "hash": "#/dsws/overview",
+      "active": [
+        {
+          "text": "Home",
+          "action": "goDash(\"DSWS_ADMIN\",\"overview\")"
+        },
+        {
+          "text": "Home",
+          "action": "goDash(\"DSWS_ADMIN\",\"overview\")"
+        }
+      ],
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "officials",
+      "width": 1440,
+      "state": "populated",
+      "pass": true,
+      "heading": "Barangay Officials",
+      "hash": "#/dsws/officials",
+      "active": [
+        {
+          "text": "Barangay Officials",
+          "action": "goDash(\"DSWS_ADMIN\",\"officials\")"
+        },
+        {
+          "text": "Officials",
+          "action": "goDash(\"DSWS_ADMIN\",\"officials\")"
+        }
+      ],
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "barangays",
+      "width": 1440,
+      "state": "populated",
+      "pass": true,
+      "heading": "Barangay monitoring",
+      "hash": "#/dsws/barangays",
+      "active": [
+        {
+          "text": "Barangays",
+          "action": "goDash(\"DSWS_ADMIN\",\"barangays\")"
+        },
+        {
+          "text": "Barangays",
+          "action": "goDash(\"DSWS_ADMIN\",\"barangays\")"
+        }
+      ],
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "requests",
+      "width": 1440,
+      "state": "populated",
+      "pass": true,
+      "heading": "Citywide requests",
+      "hash": "#/dsws/requests",
+      "active": [
+        {
+          "text": "Requests",
+          "action": "goDash(\"DSWS_ADMIN\",\"requests\")"
+        },
+        {
+          "text": "Requests",
+          "action": "goDash(\"DSWS_ADMIN\",\"requests\")"
+        }
+      ],
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "reports",
+      "width": 1440,
+      "state": "populated",
+      "pass": true,
+      "heading": "DSWS reports",
+      "hash": "#/dsws/reports",
+      "active": [
+        {
+          "text": "Reports",
+          "action": "goDash(\"DSWS_ADMIN\",\"reports\")"
+        },
+        {
+          "text": "Reports",
+          "action": "goDash(\"DSWS_ADMIN\",\"reports\")"
+        }
+      ],
+      "viewport": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "overview",
+      "width": 1024,
+      "state": "populated",
+      "pass": true,
+      "heading": "Citywide relief overview",
+      "hash": "#/dsws/overview",
+      "active": [
+        {
+          "text": "Home",
+          "action": "goDash(\"DSWS_ADMIN\",\"overview\")"
+        },
+        {
+          "text": "Home",
+          "action": "goDash(\"DSWS_ADMIN\",\"overview\")"
+        }
+      ],
+      "viewport": 1024,
+      "documentWidth": 1024,
+      "bodyWidth": 1024,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "officials",
+      "width": 1024,
+      "state": "populated",
+      "pass": true,
+      "heading": "Barangay Officials",
+      "hash": "#/dsws/officials",
+      "active": [
+        {
+          "text": "Barangay Officials",
+          "action": "goDash(\"DSWS_ADMIN\",\"officials\")"
+        },
+        {
+          "text": "Officials",
+          "action": "goDash(\"DSWS_ADMIN\",\"officials\")"
+        }
+      ],
+      "viewport": 1024,
+      "documentWidth": 1024,
+      "bodyWidth": 1024,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "barangays",
+      "width": 1024,
+      "state": "populated",
+      "pass": true,
+      "heading": "Barangay monitoring",
+      "hash": "#/dsws/barangays",
+      "active": [
+        {
+          "text": "Barangays",
+          "action": "goDash(\"DSWS_ADMIN\",\"barangays\")"
+        },
+        {
+          "text": "Barangays",
+          "action": "goDash(\"DSWS_ADMIN\",\"barangays\")"
+        }
+      ],
+      "viewport": 1024,
+      "documentWidth": 1024,
+      "bodyWidth": 1024,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "requests",
+      "width": 1024,
+      "state": "populated",
+      "pass": true,
+      "heading": "Citywide requests",
+      "hash": "#/dsws/requests",
+      "active": [
+        {
+          "text": "Requests",
+          "action": "goDash(\"DSWS_ADMIN\",\"requests\")"
+        },
+        {
+          "text": "Requests",
+          "action": "goDash(\"DSWS_ADMIN\",\"requests\")"
+        }
+      ],
+      "viewport": 1024,
+      "documentWidth": 1024,
+      "bodyWidth": 1024,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "reports",
+      "width": 1024,
+      "state": "populated",
+      "pass": true,
+      "heading": "DSWS reports",
+      "hash": "#/dsws/reports",
+      "active": [
+        {
+          "text": "Reports",
+          "action": "goDash(\"DSWS_ADMIN\",\"reports\")"
+        },
+        {
+          "text": "Reports",
+          "action": "goDash(\"DSWS_ADMIN\",\"reports\")"
+        }
+      ],
+      "viewport": 1024,
+      "documentWidth": 1024,
+      "bodyWidth": 1024,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "overview",
+      "width": 768,
+      "state": "populated",
+      "pass": true,
+      "heading": "Citywide relief overview",
+      "hash": "#/dsws/overview",
+      "active": [
+        {
+          "text": "Home",
+          "action": "goDash(\"DSWS_ADMIN\",\"overview\")"
+        },
+        {
+          "text": "Home",
+          "action": "goDash(\"DSWS_ADMIN\",\"overview\")"
+        }
+      ],
+      "viewport": 768,
+      "documentWidth": 768,
+      "bodyWidth": 768,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "officials",
+      "width": 768,
+      "state": "populated",
+      "pass": true,
+      "heading": "Barangay Officials",
+      "hash": "#/dsws/officials",
+      "active": [
+        {
+          "text": "Barangay Officials",
+          "action": "goDash(\"DSWS_ADMIN\",\"officials\")"
+        },
+        {
+          "text": "Officials",
+          "action": "goDash(\"DSWS_ADMIN\",\"officials\")"
+        }
+      ],
+      "viewport": 768,
+      "documentWidth": 768,
+      "bodyWidth": 768,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "barangays",
+      "width": 768,
+      "state": "populated",
+      "pass": true,
+      "heading": "Barangay monitoring",
+      "hash": "#/dsws/barangays",
+      "active": [
+        {
+          "text": "Barangays",
+          "action": "goDash(\"DSWS_ADMIN\",\"barangays\")"
+        },
+        {
+          "text": "Barangays",
+          "action": "goDash(\"DSWS_ADMIN\",\"barangays\")"
+        }
+      ],
+      "viewport": 768,
+      "documentWidth": 768,
+      "bodyWidth": 768,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "requests",
+      "width": 768,
+      "state": "populated",
+      "pass": true,
+      "heading": "Citywide requests",
+      "hash": "#/dsws/requests",
+      "active": [
+        {
+          "text": "Requests",
+          "action": "goDash(\"DSWS_ADMIN\",\"requests\")"
+        },
+        {
+          "text": "Requests",
+          "action": "goDash(\"DSWS_ADMIN\",\"requests\")"
+        }
+      ],
+      "viewport": 768,
+      "documentWidth": 768,
+      "bodyWidth": 768,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "reports",
+      "width": 768,
+      "state": "populated",
+      "pass": true,
+      "heading": "DSWS reports",
+      "hash": "#/dsws/reports",
+      "active": [
+        {
+          "text": "Reports",
+          "action": "goDash(\"DSWS_ADMIN\",\"reports\")"
+        },
+        {
+          "text": "Reports",
+          "action": "goDash(\"DSWS_ADMIN\",\"reports\")"
+        }
+      ],
+      "viewport": 768,
+      "documentWidth": 768,
+      "bodyWidth": 768,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "overview",
+      "width": 390,
+      "state": "populated",
+      "pass": false,
+      "heading": "Citywide relief overview",
+      "hash": "#/dsws/overview",
+      "active": [
+        {
+          "text": "Home",
+          "action": "goDash(\"DSWS_ADMIN\",\"overview\")"
+        },
+        {
+          "text": "Home",
+          "action": "goDash(\"DSWS_ADMIN\",\"overview\")"
+        }
+      ],
+      "viewport": 390,
+      "documentWidth": 400,
+      "bodyWidth": 400,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "officials",
+      "width": 390,
+      "state": "populated",
+      "pass": false,
+      "heading": "Barangay Officials",
+      "hash": "#/dsws/officials",
+      "active": [
+        {
+          "text": "Barangay Officials",
+          "action": "goDash(\"DSWS_ADMIN\",\"officials\")"
+        },
+        {
+          "text": "Officials",
+          "action": "goDash(\"DSWS_ADMIN\",\"officials\")"
+        }
+      ],
+      "viewport": 390,
+      "documentWidth": 400,
+      "bodyWidth": 400,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "barangays",
+      "width": 390,
+      "state": "populated",
+      "pass": false,
+      "heading": "Barangay monitoring",
+      "hash": "#/dsws/barangays",
+      "active": [
+        {
+          "text": "Barangays",
+          "action": "goDash(\"DSWS_ADMIN\",\"barangays\")"
+        },
+        {
+          "text": "Barangays",
+          "action": "goDash(\"DSWS_ADMIN\",\"barangays\")"
+        }
+      ],
+      "viewport": 390,
+      "documentWidth": 400,
+      "bodyWidth": 400,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "requests",
+      "width": 390,
+      "state": "populated",
+      "pass": false,
+      "heading": "Citywide requests",
+      "hash": "#/dsws/requests",
+      "active": [
+        {
+          "text": "Requests",
+          "action": "goDash(\"DSWS_ADMIN\",\"requests\")"
+        },
+        {
+          "text": "Requests",
+          "action": "goDash(\"DSWS_ADMIN\",\"requests\")"
+        }
+      ],
+      "viewport": 390,
+      "documentWidth": 400,
+      "bodyWidth": 400,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "reports",
+      "width": 390,
+      "state": "populated",
+      "pass": false,
+      "heading": "DSWS reports",
+      "hash": "#/dsws/reports",
+      "active": [
+        {
+          "text": "Reports",
+          "action": "goDash(\"DSWS_ADMIN\",\"reports\")"
+        },
+        {
+          "text": "Reports",
+          "action": "goDash(\"DSWS_ADMIN\",\"reports\")"
+        }
+      ],
+      "viewport": 390,
+      "documentWidth": 400,
+      "bodyWidth": 400,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "overview",
+      "width": 320,
+      "state": "populated",
+      "pass": false,
+      "heading": "Citywide relief overview",
+      "hash": "#/dsws/overview",
+      "active": [
+        {
+          "text": "Home",
+          "action": "goDash(\"DSWS_ADMIN\",\"overview\")"
+        },
+        {
+          "text": "Home",
+          "action": "goDash(\"DSWS_ADMIN\",\"overview\")"
+        }
+      ],
+      "viewport": 320,
+      "documentWidth": 330,
+      "bodyWidth": 330,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "officials",
+      "width": 320,
+      "state": "populated",
+      "pass": false,
+      "heading": "Barangay Officials",
+      "hash": "#/dsws/officials",
+      "active": [
+        {
+          "text": "Barangay Officials",
+          "action": "goDash(\"DSWS_ADMIN\",\"officials\")"
+        },
+        {
+          "text": "Officials",
+          "action": "goDash(\"DSWS_ADMIN\",\"officials\")"
+        }
+      ],
+      "viewport": 320,
+      "documentWidth": 330,
+      "bodyWidth": 330,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "barangays",
+      "width": 320,
+      "state": "populated",
+      "pass": false,
+      "heading": "Barangay monitoring",
+      "hash": "#/dsws/barangays",
+      "active": [
+        {
+          "text": "Barangays",
+          "action": "goDash(\"DSWS_ADMIN\",\"barangays\")"
+        },
+        {
+          "text": "Barangays",
+          "action": "goDash(\"DSWS_ADMIN\",\"barangays\")"
+        }
+      ],
+      "viewport": 320,
+      "documentWidth": 330,
+      "bodyWidth": 330,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "requests",
+      "width": 320,
+      "state": "populated",
+      "pass": false,
+      "heading": "Citywide requests",
+      "hash": "#/dsws/requests",
+      "active": [
+        {
+          "text": "Requests",
+          "action": "goDash(\"DSWS_ADMIN\",\"requests\")"
+        },
+        {
+          "text": "Requests",
+          "action": "goDash(\"DSWS_ADMIN\",\"requests\")"
+        }
+      ],
+      "viewport": 320,
+      "documentWidth": 330,
+      "bodyWidth": 330,
+      "overflow": []
+    },
+    {
+      "kind": "layout",
+      "tab": "reports",
+      "width": 320,
+      "state": "populated",
+      "pass": false,
+      "heading": "DSWS reports",
+      "hash": "#/dsws/reports",
+      "active": [
+        {
+          "text": "Reports",
+          "action": "goDash(\"DSWS_ADMIN\",\"reports\")"
+        },
+        {
+          "text": "Reports",
+          "action": "goDash(\"DSWS_ADMIN\",\"reports\")"
+        }
+      ],
+      "viewport": 320,
+      "documentWidth": 330,
+      "bodyWidth": 330,
+      "overflow": []
+    },
+    {
+      "kind": "functional",
+      "label": "Create official via valid form submit",
+      "pass": true,
+      "detail": {
+        "role": "BARANGAY_OFFICIAL",
+        "status": "APPROVED",
+        "barangay": "Apas"
+      }
+    },
+    {
+      "kind": "functional",
+      "label": "Approve official using action button",
+      "pass": true
+    },
+    {
+      "kind": "functional",
+      "label": "Reject official with real prompt and saved reason",
+      "pass": true
+    },
+    {
+      "kind": "functional",
+      "label": "Open request details",
+      "pass": true
+    },
+    {
+      "kind": "functional",
+      "label": "Close request details",
+      "pass": true
+    },
+    {
+      "kind": "functional",
+      "label": "Export actual downloadable JSON summary",
+      "pass": true,
+      "detail": {
+        "requests": 5,
+        "donations": 1
+      }
+    },
+    {
+      "kind": "functional",
+      "label": "No browser JavaScript errors",
+      "pass": true,
+      "detail": []
+    }
+  ],
+  "errors": []
+}
