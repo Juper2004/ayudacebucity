@@ -22,7 +22,15 @@ A mobile-first relief coordination prototype for Cebu City's 80 barangays, with 
 - DSWS approval of barangay official accounts
 - 72-hour request escalation indicators
 - 48-hour pledge reservations
-- DSWS citywide reporting and JSON export
+- DSWS citywide reporting and PDF summary export
+
+## PDF summary format
+
+In **DSWS > Reports**, select **Export summary (PDF)** to download an A4 portrait report named `ayuda-cebu-dsws-summary-YYYY-MM-DD.pdf`. The date and generation time use Asia/Manila. No print dialog is required.
+
+The report includes request totals, fulfilment rate, pending and escalated requests, active contributions, request and donation status counts, unmet needs by assistance category, and a paginated breakdown of barangays with requests. Empty reports show zero counts. Fulfilment rate uses all requests (including rejected requests); escalated requests have been under verification for at least 72 hours. Active contributions are reserved donations, and donation figures are counts rather than cash totals.
+
+The report covers all available relief records saved in the current browser. It contains aggregate figures, without household details, donor details, photos, or contact information. PDF libraries are installed with `npm install` and served locally by the Node server when exporting; no external CDN is used. Restart the server after updating to enable the PDF asset routes.
 
 ## Design system
 

@@ -403,10 +403,10 @@ test('static serving exposes frontend assets without exposing server, secrets or
   const index = await app.request('/');
   assert.equal(index.status, 200);
   assert.match(index.text, /<!doctype html>/i);
-  for (const path of ['/script.js', '/styles.css', '/auth.css']) {
+  for (const path of ['/script.js', '/report-pdf.js', '/styles.css', '/auth.css', '/vendor/jspdf.umd.min.js', '/vendor/jspdf.plugin.autotable.min.js']) {
     assert.equal((await app.request(path)).status, 200, path);
   }
-  for (const path of ['/.env', '/.env.example', '/server/app.cjs', '/data/ayuda.sqlite', '/tests/auth.test.cjs', '/output/dashboard-browser-results.json', '/package.json', '/.git/config']) {
+  for (const path of ['/.env', '/.env.example', '/server/app.cjs', '/data/ayuda.sqlite', '/tests/auth.test.cjs', '/output/dashboard-browser-results.json', '/package.json', '/.git/config', '/node_modules/jspdf/package.json', '/vendor/package.json']) {
     const response = await app.request(path);
     assert.ok([403, 404].includes(response.status), `${path}: ${response.status}`);
     assert.ok(!response.text.includes('test-only-secret-0123456789abcdef'));

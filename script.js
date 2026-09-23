@@ -1,4 +1,4 @@
-// -----------------------------------------------------------------------------
+ // -----------------------------------------------------------------------------
 // Application data and constants
 // -----------------------------------------------------------------------------
 const BARANGAYS = ["Adlaon", "Agsungot", "Apas", "Babag", "Bacayan", "Banilad", "Basak Pardo",
@@ -1691,7 +1691,7 @@ function dswsPage(tab = "overview") {
       ${esc.length ? `<div class="alert warning"><strong>${esc.length} escalated request(s)</strong> have remained unverified for at least 72 hours.</div>` : ""}<section class="dsws-panel dsws-table-panel">${dswsPanelHeading("All requests", svg("list"), "", reqs.length)}${requestTable(reqs, false, false, true)}</section></div>`;
     }
     else if (tab === "reports") {
-        content = `<div class="dsws-overview">${dswsPageHeading("Official reporting", "DSWS reports", "High-level indicators for relief planning and monitoring.", `<button class="dsws-report-button" onclick="exportReport()">${svg("report")}<span>Export summary</span>${svg("arrow")}</button>`)}
+        content = `<div class="dsws-overview">${dswsPageHeading("Official reporting", "DSWS reports", "Download an A4 PDF with request and donation totals, unmet needs, and a barangay breakdown.", `<button class="dsws-report-button" id="exportSummaryButton" onclick="exportReport()">${svg("report")}<span>Export summary (PDF)</span>${svg("arrow")}</button>`)}
       <div class="dsws-metrics">${dswsMetric(reqs.length, "Total requests filed", svg("report"), "blue")}${dswsMetric(rate + "%", "Fulfilment rate", svg("check"), "green")}${dswsMetric(esc.length, "Escalated requests", dswsSymbol("bell"), "amber")}${dswsMetric(dons.filter(d => d.status === "Reserved").length, "Active contributions", svg("users"), "purple")}</div>
       <div class="dsws-panels dsws-panels-equal">
         <section class="dsws-panel">${dswsPanelHeading("Current summary", svg("chart"))}<div class="dsws-panel-body"><div class="kv"><strong>Total requests</strong><span>${reqs.length}</span></div><div class="kv"><strong>Fulfilled</strong><span>${fulfilled}</span></div><div class="kv"><strong>Fulfilment rate</strong><span>${rate}%</span></div><div class="kv"><strong>Active donations</strong><span>${dons.filter(d => d.status === "Reserved").length}</span></div><div class="kv"><strong>Escalated</strong><span>${esc.length}</span></div></div></section>
@@ -1705,19 +1705,55 @@ function dswsPage(tab = "overview") {
     }
     return dashShell("DSWS_ADMIN", tab, content);
 }
-window.exportReport = () => {
+let reportLibrariesLoading;
+let reportExporting = false;
+function loadReportLibraries() {
+    if (!reportLibrariesLoading) {
+        const loadError = "PDF files could not be loaded from the app server. Restart the app server, then refresh this page and try again.";
+        const load = src => new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = src;
+            script.onload = resolve;
+            script.onerror = () => { script.remove(); reject(new Error(loadError)); };
+            document.head.appendChild(script);
+        });
+        reportLibrariesLoading = (async () => {
+            if (typeof window.jspdf?.jsPDF !== "function") await load("/vendor/jspdf.umd.min.js");
+            if (typeof window.jspdf?.jsPDF !== "function") throw new Error(loadError);
+            if (typeof window.jspdf.jsPDF.API?.autoTable !== "function") await load("/vendor/jspdf.plugin.autotable.min.js");
+            if (typeof window.jspdf.jsPDF.API?.autoTable !== "function") throw new Error(loadError);
+        })().catch(error => { reportLibrariesLoading = null; throw error; });
+    }
+    return reportLibrariesLoading;
+}
+window.exportReport = async () => {
     if (!currentActor("DSWS_ADMIN")) {
         toast("An approved DSWS administrator account is required.");
         return;
     }
-    expirePledges();
-    let data = { generatedAt: new Date().toISOString(), requests: getRequests(), donations: getDonations() };
-    let blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }), url = URL.createObjectURL(blob), a = document.createElement("a");
-    a.href = url;
-    a.download = "ayuda-cebu-dsws-summary.json";
-    a.click();
-    URL.revokeObjectURL(url);
-    toast("Summary exported.");
+    if (reportExporting) return;
+    reportExporting = true;
+    const button = document.getElementById("exportSummaryButton");
+    if (button) { button.disabled = true; button.setAttribute("aria-busy", "true"); button.querySelector("span").textContent = "Preparing PDF..."; }
+    try {
+        if (typeof window.DswsReport?.buildSummary !== "function" || typeof window.DswsReport?.createPdf !== "function") {
+            throw new Error("The PDF report module could not be loaded. Restart the app server, then refresh this page and try again.");
+        }
+        await loadReportLibraries();
+        if (!currentActor("DSWS_ADMIN")) throw new Error("An approved DSWS administrator account is required.");
+        expirePledges();
+        const summary = DswsReport.buildSummary({ requests: getRequests(), donations: getDonations(), barangays: BARANGAYS, categories: ASSISTANCE_CATEGORIES });
+        const doc = DswsReport.createPdf(summary, window.jspdf.jsPDF);
+        await doc.save(summary.filename, { returnPromise: true });
+        toast("PDF summary download started.");
+    }
+    catch (error) {
+        toast(error.message || "Could not generate the PDF. Please try again.");
+    }
+    finally {
+        reportExporting = false;
+        if (button) { button.disabled = false; button.removeAttribute("aria-busy"); button.querySelector("span").textContent = "Export summary (PDF)"; }
+    }
 };
 // -----------------------------------------------------------------------------
 // Shared dashboard views

@@ -281,9 +281,11 @@ async function createApp(options = {}) {
   app.use('/api', (req, res) => fail(res, 404, 'API endpoint not found.'));
 
   // Serve only public application assets, never the project directory or secrets.
-  const assets = ['index.html', 'script.js', 'styles.css', 'auth.css', 'auth-cebu-waterfront.png', 'banner.png', 'cebu-skyline.png', 'final-icon.png', 'hero.png'];
+  const assets = ['index.html', 'script.js', 'report-pdf.js', 'styles.css', 'auth.css', 'auth-cebu-waterfront.png', 'banner.png', 'cebu-skyline.png', 'final-icon.png', 'hero.png'];
   app.get('/', (req, res) => res.sendFile(path.join(root, 'index.html')));
   for (const asset of assets) app.get('/' + asset, (req, res) => res.sendFile(path.join(root, asset)));
+  app.get('/vendor/jspdf.umd.min.js', (req, res) => res.sendFile(path.join(root, 'node_modules/jspdf/dist/jspdf.umd.min.js')));
+  app.get('/vendor/jspdf.plugin.autotable.min.js', (req, res) => res.sendFile(path.join(root, 'node_modules/jspdf-autotable/dist/jspdf.plugin.autotable.min.js')));
   app.use((req, res) => fail(res, 404, 'Page not found.'));
   app.use((error, req, res, next) => {
     if (res.headersSent) return next(error);
