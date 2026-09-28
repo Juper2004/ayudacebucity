@@ -1322,6 +1322,18 @@ tr:last-child td {
   margin: 0;
 }
 
+.report-download-dialog { min-width: 0; }
+.report-download-dialog .modal-head { align-items: flex-start; }
+.report-download-dialog .modal-close { flex-shrink: 0; }
+.report-download-dialog p { color: var(--muted); line-height: 1.55; }
+.report-download-file { display: flex; align-items: flex-start; gap: 12px; padding: 16px; margin: 18px 0; border-radius: 16px; background: var(--blue-soft); }
+.report-download-file > svg { flex-shrink: 0; width: 24px; height: 24px; color: var(--blue); }
+.report-download-file > div { min-width: 0; }
+.report-download-file strong, .report-download-file span { display: block; overflow-wrap: anywhere; }
+.report-download-file span { margin-top: 5px; color: var(--muted); font-size: .75rem; }
+.report-download-actions { display: grid; gap: 10px; margin: 20px 0 14px; }
+.report-download-actions .btn { width: 100%; min-height: 48px; }
+
 .kv {
   display: grid;
   grid-template-columns: 112px 1fr;

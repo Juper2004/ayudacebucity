@@ -1707,6 +1707,7 @@ function dswsPage(tab = "overview") {
 }
 let reportLibrariesLoading;
 let reportExporting = false;
+let preparedReport = null;
 function loadReportLibraries() {
     if (!reportLibrariesLoading) {
         const loadError = "PDF files could not be loaded from the app server. Restart the app server, then refresh this page and try again.";
@@ -1726,6 +1727,73 @@ function loadReportLibraries() {
     }
     return reportLibrariesLoading;
 }
+function reportUsesTouchControls() {
+    return navigator.maxTouchPoints > 0 || window.matchMedia("(pointer: coarse)").matches;
+}
+function buildReportInWorker(summary) {
+    return new Promise((resolve, reject) => {
+        let worker;
+        let timer;
+        const finish = (error, buffer) => {
+            clearTimeout(timer);
+            worker?.terminate();
+            error ? reject(error) : resolve(new Blob([buffer], { type: "application/pdf" }));
+        };
+        try {
+            worker = new Worker("/report-worker.js");
+            timer = setTimeout(() => finish(new Error("Preparing the PDF took too long. Please try again.")), 60000);
+            worker.onmessage = ({ data }) => {
+                if (!(data?.buffer instanceof ArrayBuffer)) {
+                    finish(new Error(data?.error || "Could not prepare the PDF. Please try again."));
+                    return;
+                }
+                finish(null, data.buffer);
+            };
+            worker.onerror = event => {
+                event.preventDefault();
+                finish(new Error("PDF files could not be loaded. Restart the app server, refresh this page, and try again."));
+            };
+            worker.postMessage(summary);
+        }
+        catch (error) { finish(error); }
+    });
+}
+function showReportDownload(blob, filename) {
+    const report = { url: URL.createObjectURL(blob), file: new File([blob], filename, { type: "application/pdf" }) };
+    let canShare = false;
+    try { canShare = typeof navigator.share === "function" && navigator.canShare?.({ files: [report.file] }); }
+    catch { /* Download and preview remain available when file sharing is unsupported. */ }
+    showModal(`<div class="report-download-dialog" id="reportDownloadDialog">
+        <div class="modal-head"><div><div class="modal-eyebrow">Report export</div><h2>Your PDF is ready</h2></div><button class="icon-btn modal-close" aria-label="Close report download" onclick="closeModal()">${svg("close")}</button></div>
+        <div class="report-download-file">${svg("report")}<div><strong>DSWS Relief Summary</strong><span>${escapeHtml(filename)}</span><span>PDF &middot; ${Math.max(1, Math.ceil(blob.size / 1024))} KB</span></div></div>
+        <p>Tap <strong>Download PDF</strong> to save your report. If it opens as a preview, use your browser's Share or Save option.</p>
+        <div class="report-download-actions"><a class="btn btn-primary" id="downloadReportPdf" download target="_blank" rel="noopener">Download PDF</a>${canShare ? '<button class="btn btn-light" id="shareReportPdf" onclick="shareReportPdf()">Share / Save</button>' : ""}<a class="btn btn-light" id="openReportPdf" target="_blank" rel="noopener">Open PDF</a></div>
+        <p class="small muted">On iPhone, you can save the PDF to Files from the share menu.</p>
+    </div>`, () => {
+        if (preparedReport === report) preparedReport = null;
+        // A preview tab or the browser's download manager may still be reading the URL.
+        setTimeout(() => URL.revokeObjectURL(report.url), 60000);
+    });
+    preparedReport = report;
+    const download = document.getElementById("downloadReportPdf");
+    download.href = report.url;
+    download.download = filename;
+    document.getElementById("openReportPdf").href = report.url;
+}
+window.shareReportPdf = async () => {
+    if (!currentActor("DSWS_ADMIN") || !preparedReport) return;
+    const button = document.getElementById("shareReportPdf");
+    if (button?.disabled) return;
+    if (button) button.disabled = true;
+    try {
+        // Start sharing directly inside this tap; do not await loading or generation first.
+        await navigator.share({ files: [preparedReport.file], title: "DSWS Relief Summary" });
+    }
+    catch (error) {
+        if (error.name !== "AbortError") toast("Sharing is unavailable. Try Download PDF or Open PDF.");
+    }
+    finally { if (button) button.disabled = false; }
+};
 window.exportReport = async () => {
     if (!currentActor("DSWS_ADMIN")) {
         toast("An approved DSWS administrator account is required.");
@@ -1739,13 +1807,28 @@ window.exportReport = async () => {
         if (typeof window.DswsReport?.buildSummary !== "function" || typeof window.DswsReport?.createPdf !== "function") {
             throw new Error("The PDF report module could not be loaded. Restart the app server, then refresh this page and try again.");
         }
-        await loadReportLibraries();
+        // Paint the busy state before reading records or preparing the PDF.
+        await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
         if (!currentActor("DSWS_ADMIN")) throw new Error("An approved DSWS administrator account is required.");
         expirePledges();
         const summary = DswsReport.buildSummary({ requests: getRequests(), donations: getDonations(), barangays: BARANGAYS, categories: ASSISTANCE_CATEGORIES });
-        const doc = DswsReport.createPdf(summary, window.jspdf.jsPDF);
-        await doc.save(summary.filename, { returnPromise: true });
-        toast("PDF summary download started.");
+        if (reportUsesTouchControls()) {
+            let blob;
+            if (typeof Worker === "function") blob = await buildReportInWorker(summary);
+            else {
+                await loadReportLibraries();
+                blob = DswsReport.createPdf(summary, window.jspdf.jsPDF).output("blob");
+            }
+            if (!currentActor("DSWS_ADMIN")) throw new Error("An approved DSWS administrator account is required.");
+            // A fresh tap on a ready file avoids mobile download/popup gesture restrictions.
+            showReportDownload(blob, summary.filename);
+        } else {
+            await loadReportLibraries();
+            if (!currentActor("DSWS_ADMIN")) throw new Error("An approved DSWS administrator account is required.");
+            const doc = DswsReport.createPdf(summary, window.jspdf.jsPDF);
+            await doc.save(summary.filename, { returnPromise: true });
+            toast("PDF summary download started.");
+        }
     }
     catch (error) {
         toast(error.message || "Could not generate the PDF. Please try again.");
@@ -2007,11 +2090,13 @@ function setupRequestPhotoViewer(dialog, photos) {
 // Modal handling
 // -----------------------------------------------------------------------------
 let modalReturnFocus = null;
+let modalCleanup = null;
 function getFocusableElements(container) {
     return [...container.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')].filter(element => !element.hidden && element.offsetParent !== null);
 }
-function showModal(html) {
+function showModal(html, onClose = null) {
     closeModal();
+    modalCleanup = onClose;
     modalReturnFocus = document.activeElement;
     const backdrop = document.createElement("div");
     backdrop.id = "modalRoot";
@@ -2065,6 +2150,9 @@ function showModal(html) {
     });
 }
 window.closeModal = () => {
+    const cleanup = modalCleanup;
+    modalCleanup = null;
+    cleanup?.();
     document.getElementById("modalRoot")?.remove();
     const app = document.getElementById("app");
     if (app)

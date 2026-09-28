@@ -1,0 +1,30 @@
+{
+  "passed": 25,
+  "errors": [],
+  "expectedFailureErrors": [],
+  "downloads": 3,
+  "completed": 3,
+  "observations": [
+    {
+      "scenario": "390px slow first export",
+      "trace": [
+        {
+          "event": "tap",
+          "trusted": true,
+          "active": true,
+          "time": 641.3999999985099
+        },
+        {
+          "event": "ready",
+          "active": false,
+          "time": 7000.39999999851
+        }
+      ]
+    },
+    {
+      "scenario": "page responsiveness during preparation",
+      "ticks": 128,
+      "maxGapMs": 64.40000000223517
+    }
+  ]
+}

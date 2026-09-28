@@ -98,7 +98,7 @@ async function createApp(options = {}) {
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY',
       'Referrer-Policy': 'same-origin',
-      'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+      'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
     });
     next();
   });
@@ -281,7 +281,7 @@ async function createApp(options = {}) {
   app.use('/api', (req, res) => fail(res, 404, 'API endpoint not found.'));
 
   // Serve only public application assets, never the project directory or secrets.
-  const assets = ['index.html', 'script.js', 'report-pdf.js', 'styles.css', 'auth.css', 'auth-cebu-waterfront.png', 'banner.png', 'cebu-skyline.png', 'final-icon.png', 'hero.png'];
+  const assets = ['index.html', 'script.js', 'report-pdf.js', 'report-worker.js', 'styles.css', 'auth.css', 'auth-cebu-waterfront.png', 'banner.png', 'cebu-skyline.png', 'final-icon.png', 'hero.png'];
   app.get('/', (req, res) => res.sendFile(path.join(root, 'index.html')));
   for (const asset of assets) app.get('/' + asset, (req, res) => res.sendFile(path.join(root, asset)));
   app.get('/vendor/jspdf.umd.min.js', (req, res) => res.sendFile(path.join(root, 'node_modules/jspdf/dist/jspdf.umd.min.js')));

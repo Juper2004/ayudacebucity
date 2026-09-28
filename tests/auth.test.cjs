@@ -403,7 +403,8 @@ test('static serving exposes frontend assets without exposing server, secrets or
   const index = await app.request('/');
   assert.equal(index.status, 200);
   assert.match(index.text, /<!doctype html>/i);
-  for (const path of ['/script.js', '/report-pdf.js', '/styles.css', '/auth.css', '/vendor/jspdf.umd.min.js', '/vendor/jspdf.plugin.autotable.min.js']) {
+  assert.match(index.headers.get('content-security-policy'), /(?:^|;)\s*worker-src 'self'(?:;|$)/);
+  for (const path of ['/script.js', '/report-pdf.js', '/report-worker.js', '/styles.css', '/auth.css', '/vendor/jspdf.umd.min.js', '/vendor/jspdf.plugin.autotable.min.js']) {
     assert.equal((await app.request(path)).status, 200, path);
   }
   for (const path of ['/.env', '/.env.example', '/server/app.cjs', '/data/ayuda.sqlite', '/tests/auth.test.cjs', '/output/dashboard-browser-results.json', '/package.json', '/.git/config', '/node_modules/jspdf/package.json', '/vendor/package.json']) {

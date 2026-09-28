@@ -1,0 +1,40 @@
+{
+  "passed": 13,
+  "errors": [],
+  "downloads": 2,
+  "completed": 2,
+  "observations": [
+    {
+      "scenario": "390px slow first export",
+      "trace": [
+        {
+          "event": "tap",
+          "trusted": true,
+          "active": true,
+          "time": 665.6000000014901
+        },
+        {
+          "event": "save",
+          "active": false,
+          "time": 6946.900000002235
+        }
+      ]
+    },
+    {
+      "scenario": "320px cached export",
+      "trace": [
+        {
+          "event": "tap",
+          "trusted": true,
+          "active": true,
+          "time": 7170.5
+        },
+        {
+          "event": "save",
+          "active": true,
+          "time": 7176.400000002235
+        }
+      ]
+    }
+  ]
+}

@@ -28,6 +28,8 @@ A mobile-first relief coordination prototype for Cebu City's 80 barangays, with 
 
 In **DSWS > Reports**, select **Export summary (PDF)** to download an A4 portrait report named `ayuda-cebu-dsws-summary-YYYY-MM-DD.pdf`. The date and generation time use Asia/Manila. No print dialog is required.
 
+On phones and other touch devices, wait for **Your PDF is ready**, then tap **Download PDF**. **Open PDF** provides a preview, and **Share / Save** appears when the browser supports sharing files. On iPhone, the share menu can save the PDF to Files. Preparing the file before the final tap avoids losing the browser's user gesture during a slow load. Supported browsers generate the PDF in a background worker to keep the page responsive; desktop browsers retain the automatic download.
+
 The report includes request totals, fulfilment rate, pending and escalated requests, active contributions, request and donation status counts, unmet needs by assistance category, and a paginated breakdown of barangays with requests. Empty reports show zero counts. Fulfilment rate uses all requests (including rejected requests); escalated requests have been under verification for at least 72 hours. Active contributions are reserved donations, and donation figures are counts rather than cash totals.
 
 The report covers all available relief records saved in the current browser. It contains aggregate figures, without household details, donor details, photos, or contact information. PDF libraries are installed with `npm install` and served locally by the Node server when exporting; no external CDN is used. Restart the server after updating to enable the PDF asset routes.
