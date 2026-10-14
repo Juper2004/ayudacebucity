@@ -49,7 +49,13 @@
 .auth-shell .brand-mark {
   width: 44px;
   height: 44px;
-  background: #fff url("final-icon.png") center / contain no-repeat;
+  border-radius: 50%;
+  overflow: hidden;
+  background-color: #fff;
+  background-image: url("./main-logo-circle.png");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, .35), 0 3px 14px rgba(4, 20, 41, .1);
 }
 .auth-shell .brand-copy { font-size: .84rem; font-weight: 850; letter-spacing: -.025em; }

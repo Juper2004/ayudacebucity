@@ -1,0 +1,120 @@
+{
+  "passed": 28,
+  "failed": 0,
+  "providerCalls": 1,
+  "results": [
+    {
+      "label": "Native browser location resolves an address through same-origin CSP",
+      "pass": true
+    },
+    {
+      "label": "Location panel fits mobile screens",
+      "pass": true
+    },
+    {
+      "label": "GPS requests a fresh, high-accuracy fix and immediately saves coordinates",
+      "pass": true
+    },
+    {
+      "label": "Unavailable address lookup preserves usable GPS and map link",
+      "pass": true
+    },
+    {
+      "label": "Specific guidance when location is denied",
+      "pass": true
+    },
+    {
+      "label": "Specific guidance when location is temporarily unavailable",
+      "pass": true
+    },
+    {
+      "label": "Specific guidance when location is temporarily timed out",
+      "pass": true
+    },
+    {
+      "label": "Unsupported browsers offer manual address entry",
+      "pass": true
+    },
+    {
+      "label": "Insecure contexts explain HTTPS or localhost requirements",
+      "pass": true
+    },
+    {
+      "label": "Manual edits clear saved GPS and defeat late address responses",
+      "pass": true
+    },
+    {
+      "label": "Editing while locating cancels capture and ignores late GPS callbacks",
+      "pass": true
+    },
+    {
+      "label": "Navigation invalidates old geolocation callbacks",
+      "pass": true
+    },
+    {
+      "label": "Page hiding stops location work and leaves a usable form",
+      "pass": true
+    },
+    {
+      "label": "Cancel button stops GPS without filling the field later",
+      "pass": true
+    },
+    {
+      "label": "Capture deadline ends a silent GPS watch",
+      "pass": true
+    },
+    {
+      "label": "One click waits through 271m and 45m readings before accepting 8m",
+      "pass": true
+    },
+    {
+      "label": "A 271m reading times out without saving a pin or looking up an address",
+      "pass": true
+    },
+    {
+      "label": "A coarse reading blocks submission and cancellation never saves it",
+      "pass": true
+    },
+    {
+      "label": "Stale or invalid timestamps never qualify even with 8m accuracy",
+      "pass": true
+    },
+    {
+      "label": "Invalid or zero device accuracy cannot produce an automatic pin",
+      "pass": true
+    },
+    {
+      "label": "Permission denial after a coarse reading rejects the automatic pin",
+      "pass": true
+    },
+    {
+      "label": "A new capture clears a previously accepted automatic address and pin",
+      "pass": true
+    },
+    {
+      "label": "Coarse capture automatically reacquires and ignores superseded watch callbacks",
+      "pass": true
+    },
+    {
+      "label": "Failed precision capture preserves a manually entered household address",
+      "pass": true
+    },
+    {
+      "label": "Manual coordinates create a map pin without claiming device accuracy",
+      "pass": true
+    },
+    {
+      "label": "Submission waits for a fix; cancellation permits an optional empty location",
+      "pass": true
+    },
+    {
+      "label": "Submitting during address lookup preserves GPS, accuracy, and timestamp",
+      "pass": true
+    },
+    {
+      "label": "No unhandled browser exceptions",
+      "pass": true
+    }
+  ],
+  "exceptions": []
+}

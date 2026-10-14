@@ -17,6 +17,8 @@ const seedRequests = [];
 const seedDonations = [];
 // Relief records are still a browser prototype. Accounts and sessions belong to the server.
 const STORAGE = { requests: "ayudaRequestsProV3", donations: "ayudaDonationsProV3" };
+const dashboardDataCache = { userId: null, requests: null, donations: null, loading: null, error: "" };
+const notificationState = { userId: null, items: null, unreadCount: 0, loading: null, error: "" };
 const storageWarnings = new Map();
 const recoveryAttempts = new Map();
 const authState = { user: null, users: [], ready: false, error: "" };
@@ -138,20 +140,72 @@ function init() {
     expirePledges();
 }
 const getUsers = () => authState.users;
-const getRequests = () => readRecords("requests");
+function dashboardDataActor() {
+    const actor = session();
+    const roles = ["HOUSEHOLD", "BARANGAY_OFFICIAL", "DONOR", "DSWS_ADMIN"];
+    return actor && roles.includes(actor.role) && (actor.role === "HOUSEHOLD" || actor.status === "APPROVED") ? actor : null;
+}
+const getRequests = () => {
+    const actor = dashboardDataActor();
+    if (actor)
+        return dashboardDataCache.userId === actor.id && Array.isArray(dashboardDataCache.requests) ? dashboardDataCache.requests : [];
+    return readRecords("requests");
+};
 const setRequests = v => commitRecords({ requests: v });
-const getDonations = () => readRecords("donations");
+const getDonations = () => {
+    const actor = dashboardDataActor();
+    if (actor)
+        return dashboardDataCache.userId === actor.id && Array.isArray(dashboardDataCache.donations) ? dashboardDataCache.donations : [];
+    return readRecords("donations");
+};
 const setDonations = v => commitRecords({ donations: v });
 const session = () => authState.user;
+let tabSessionIdPromise;
+function getTabSessionId() {
+    if (!tabSessionIdPromise) tabSessionIdPromise = createTabSessionId();
+    return tabSessionIdPromise;
+}
+async function createTabSessionId() {
+    // This selector is not a login token. The server keeps tokens in HttpOnly cookies.
+    const freshId = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")).join("");
+    let id;
+    try { id = sessionStorage.getItem("ayudaTabId"); } catch { }
+    if (!/^[a-f0-9]{32}$/.test(id || "")) id = freshId();
+    if (navigator.locks?.request) {
+        // Duplicated tabs and window.open can copy sessionStorage. Only one live
+        // document may own a selector; the browser releases its lock on unload.
+        const claim = candidate => new Promise((resolve, reject) => {
+            navigator.locks.request("ayuda-tab-" + candidate, { ifAvailable: true }, lock => {
+                resolve(Boolean(lock));
+                if (lock) return new Promise(() => {});
+            }).catch(reject);
+        });
+        try {
+            while (!await claim(id)) id = freshId();
+        }
+        catch { id = freshId(); }
+    }
+    try { sessionStorage.setItem("ayudaTabId", id); } catch { /* Keep this tab isolated in memory when storage is blocked. */ }
+    return id;
+}
+async function authHeaders(json = false) {
+    return {
+        Accept: "application/json",
+        "X-Ayuda-Tab": await getTabSessionId(),
+        ...(json ? { "Content-Type": "application/json" } : {})
+    };
+}
 async function api(path, body) {
     if (!/^https?:$/.test(location.protocol))
         throw new Error("Start AYUDA with npm start, then open http://localhost:3000 to use accounts and email recovery.");
+    const revision = authRevision;
+    const headers = await authHeaders(body !== undefined);
     let response;
     try {
         response = await fetch(path, {
             method: body === undefined ? "GET" : "POST",
             credentials: "same-origin",
-            headers: body === undefined ? { Accept: "application/json" } : { Accept: "application/json", "Content-Type": "application/json" },
+            headers,
             ...(body === undefined ? {} : { body: JSON.stringify(body) }),
             signal: AbortSignal.timeout(30000)
         });
@@ -166,7 +220,7 @@ async function api(path, body) {
         const error = new Error(data.message || data.error || "The request could not be completed. Please try again.");
         error.status = response.status;
         error.retryAfter = Math.max(0, Number(response.headers.get("Retry-After")) || 0);
-        if (response.status === 401 && !path.startsWith("/api/auth/login")) {
+        if (response.status === 401 && !path.startsWith("/api/auth/login") && revision === authRevision) {
             authRevision++;
             authState.user = null;
             authState.users = [];
@@ -175,6 +229,66 @@ async function api(path, body) {
         throw error;
     }
     return data;
+}
+function refreshDashboardData(force = false) {
+    const actor = dashboardDataActor();
+    if (!actor)
+        return Promise.resolve();
+    if (dashboardDataCache.loading)
+        return dashboardDataCache.loading;
+    if (!force && dashboardDataCache.userId === actor.id && Array.isArray(dashboardDataCache.requests) && Array.isArray(dashboardDataCache.donations))
+        return Promise.resolve();
+    const userId = actor.id;
+    if (dashboardDataCache.userId !== userId) {
+        dashboardDataCache.requests = null;
+        dashboardDataCache.donations = null;
+    }
+    dashboardDataCache.userId = userId;
+    dashboardDataCache.error = "";
+    dashboardDataCache.loading = Promise.all([api("/api/requests"), api("/api/donations")]).then(([requestData, donationData]) => {
+        if (!Array.isArray(requestData.requests) || !Array.isArray(donationData.donations))
+            throw new Error("The server returned invalid dashboard data.");
+        if (dashboardDataActor()?.id === userId) {
+            dashboardDataCache.requests = requestData.requests;
+            dashboardDataCache.donations = donationData.donations;
+        }
+    }).catch(error => {
+        dashboardDataCache.error = error.message;
+        throw error;
+    }).finally(() => {
+        dashboardDataCache.loading = null;
+    });
+    return dashboardDataCache.loading;
+}
+function refreshNotifications(force = false) {
+    const actor = dashboardDataActor();
+    if (!actor)
+        return Promise.resolve();
+    if (notificationState.loading)
+        return notificationState.loading;
+    if (!force && notificationState.userId === actor.id && Array.isArray(notificationState.items))
+        return Promise.resolve();
+    const userId = actor.id;
+    if (notificationState.userId !== userId) {
+        notificationState.items = null;
+        notificationState.unreadCount = 0;
+    }
+    notificationState.userId = userId;
+    notificationState.error = "";
+    notificationState.loading = api("/api/notifications").then(data => {
+        if (!Array.isArray(data.notifications) || !Number.isInteger(data.unreadCount))
+            throw new Error("The server returned invalid notifications.");
+        if (dashboardDataActor()?.id === userId) {
+            notificationState.items = data.notifications;
+            notificationState.unreadCount = data.unreadCount;
+        }
+    }).catch(error => {
+        notificationState.error = error.message;
+        throw error;
+    }).finally(() => {
+        notificationState.loading = null;
+    });
+    return notificationState.loading;
 }
 async function refreshAuth() {
     const revision = ++authRevision;
@@ -271,54 +385,7 @@ window.confirmLogout = () => {
     <div class="modal-confirm-actions"><button class="btn btn-light" type="button" onclick="closeModal()">Cancel</button><button class="btn btn-primary" type="button" onclick="logout()">Log out</button></div></div>`);
 };
 function expirePledges() {
-    const requests = getRequests(), donations = getDonations(), now = Date.now();
-    let changed = false;
-    donations.forEach(d => {
-        if (d.status !== "Reserved" || !d.requestId)
-            return;
-        const deadline = reservationDeadline(d);
-        if (!Number.isFinite(deadline) || deadline <= now) {
-            d.status = "Expired";
-            d.expiredAt = new Date(now).toISOString();
-            changed = true;
-        }
-        else {
-            if (!d.expiresAt) {
-                d.expiresAt = new Date(deadline).toISOString();
-                changed = true;
-            }
-            const request = requests.find(r => r.id === d.requestId);
-            if (!request || request.status === "Rejected") {
-                d.status = "Cancelled";
-                d.cancelledAt = new Date(now).toISOString();
-                changed = true;
-            }
-        }
-    });
-    requests.forEach(r => {
-        if (!["Approved", "Pledged"].includes(r.status))
-            return;
-        const active = donations.filter(d => d.requestId === r.id && activeReservation(d, now));
-        const status = active.length ? "Pledged" : "Approved";
-        if (r.status !== status) {
-            r.status = status;
-            changed = true;
-        }
-        if (active.length) {
-            const first = active.reduce((a, b) => Date.parse(a.createdAt) <= Date.parse(b.createdAt) ? a : b);
-            if (r.pledgedAt !== first.createdAt || r.pledgedBy !== first.donor) {
-                r.pledgedAt = first.createdAt;
-                r.pledgedBy = first.donor;
-                changed = true;
-            }
-        }
-        else if (r.pledgedAt || r.pledgedBy) {
-            delete r.pledgedAt;
-            delete r.pledgedBy;
-            changed = true;
-        }
-    });
-    return changed ? commitRecords({ requests, donations }) : false;
+    return false;
 }
 // -----------------------------------------------------------------------------
 // Shared UI helpers
@@ -338,6 +405,7 @@ function svg(name) {
         home: '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-7h6v7"/></svg>',
         plus: '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
         list: '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>',
+        bell: '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>',
         user: '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
         check: '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4L19 6"/></svg>',
         search: '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',
@@ -832,10 +900,36 @@ window.handleRegister = e => submitForm(e, "Creating account…", async () => {
 // -----------------------------------------------------------------------------
 const DASHBOARD_CONFIG = {
     HOUSEHOLD: { title: "Household Portal", tabs: [["overview", "Home"], ["request", "New Request"], ["history", "My Requests"], ["profile", "Profile"]] },
-    BARANGAY_OFFICIAL: { title: "Barangay Dashboard", tabs: [["overview", "Home"], ["accounts", "Account Verification", "Accounts"], ["pending", "Pending Requests", "Pending"], ["all", "Requests"], ["profile", "Profile"]] },
+    BARANGAY_OFFICIAL: { title: "Barangay Dashboard", tabs: [["overview", "Home"], ["accounts", "Account Verification", "Accounts"], ["pending", "Pending Requests", "Pending"], ["donations", "General Donations", "Donations"], ["all", "Requests"], ["profile", "Profile"]] },
     DONOR: { title: "Donor Portal", tabs: [["overview", "Home"], ["browse", "Browse"], ["donations", "Donations"], ["profile", "Profile"]] },
     DSWS_ADMIN: { title: "DSWS Dashboard", tabs: [["overview", "Home"], ["officials", "Barangay Officials", "Officials"], ["barangays", "Barangays"], ["requests", "Requests"], ["reports", "Reports"], ["profile", "Profile"]] }
 };
+function notificationTime(value) {
+    const date = new Date(value);
+    return value && Number.isFinite(date.getTime())
+        ? new Intl.DateTimeFormat("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(date)
+        : "Time unavailable";
+}
+function notificationCenterMarkup() {
+    const actor = dashboardDataActor();
+    const ownsInbox = actor && notificationState.userId === actor.id;
+    const count = ownsInbox ? notificationState.unreadCount : 0;
+    const items = ownsInbox ? notificationState.items : null;
+    const content = notificationState.error
+        ? `<p class="notification-empty">${escapeHtml(notificationState.error)}</p>`
+        : !Array.isArray(items)
+            ? `<p class="notification-empty">Loading notifications…</p>`
+            : items.length
+                ? items.map(item => `<button class="notification-item${item.readAt ? "" : " is-unread"}" type="button" onclick="openNotification(${toInlineJsArg(item.id)},${toInlineJsArg(item.targetType)},${toInlineJsArg(item.targetId)})"><span class="notification-item-copy"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.body)}</span><time datetime="${escapeHtml(item.createdAt)}">${escapeHtml(notificationTime(item.createdAt))}</time></span>${item.readAt ? "" : '<span class="notification-unread-dot" aria-label="Unread"></span>'}</button>`).join("")
+                : `<p class="notification-empty">You’re all caught up.</p>`;
+    return `<div class="notification-center">
+      <button id="notificationToggle" class="icon-btn notification-toggle" type="button" aria-label="${count ? `${count} unread notifications` : "Notifications"}" aria-expanded="false" aria-controls="notificationPanel" title="Notifications" onclick="toggleNotificationPanel()">${svg("bell")}${count ? `<span class="notification-count" aria-hidden="true">${count > 99 ? "99+" : count}</span>` : ""}</button>
+      <section id="notificationPanel" class="notification-panel" aria-label="Notifications" hidden>
+        <header class="notification-panel-head"><strong>Notifications</strong><button type="button" class="notification-mark-all" onclick="markAllNotificationsRead()" ${count ? "" : "disabled"}>Mark all read</button></header>
+        <div class="notification-list">${content}</div>
+      </section>
+    </div>`;
+}
 function dashShell(role, active, content) {
     const s = session();
     const cfg = DASHBOARD_CONFIG[role];
@@ -849,6 +943,7 @@ function dashShell(role, active, content) {
         <div class="user-chip">
           <span class="system-status"><span class="system-status-dot"></span>Operational</span>
           <div class="user-meta"><strong class="small">${escapeHtml(s.name)}</strong><div class="small muted">${escapeHtml(cfg.title)}</div></div>
+          ${notificationCenterMarkup()}
           <div class="avatar" aria-hidden="true">${escapeHtml(s.name.split(" ").map(x => x[0]).join("").slice(0, 2))}</div>
           <button class="icon-btn" aria-label="Log out" title="Log out" onclick="confirmLogout()">${svg("logout")}</button>
         </div>
@@ -877,8 +972,67 @@ window.goDash = (role, tab) => {
     if (!routes[role] || !DASHBOARD_CONFIG[role]?.tabs.some(item => item[0] === tab)) return;
     location.hash = `#/${routes[role]}/${tab}`;
 };
+window.toggleNotificationPanel = () => {
+    const panel = document.getElementById("notificationPanel");
+    const button = document.getElementById("notificationToggle");
+    if (!panel || !button) return;
+    panel.hidden = !panel.hidden;
+    button.setAttribute("aria-expanded", String(!panel.hidden));
+};
+window.addEventListener("click", event => {
+    if (event.target instanceof Element && !event.target.closest(".notification-center")) {
+        const panel = document.getElementById("notificationPanel");
+        const button = document.getElementById("notificationToggle");
+        if (panel && !panel.hidden) panel.hidden = true;
+        button?.setAttribute("aria-expanded", "false");
+    }
+});
+window.addEventListener("keydown", event => {
+    if (event.key !== "Escape") return;
+    const panel = document.getElementById("notificationPanel");
+    const button = document.getElementById("notificationToggle");
+    if (panel && !panel.hidden) {
+        panel.hidden = true;
+        button?.setAttribute("aria-expanded", "false");
+        button?.focus();
+    }
+});
+window.markAllNotificationsRead = async () => {
+    try {
+        await api("/api/notifications/read-all", {});
+        await refreshNotifications(true);
+        render();
+    }
+    catch (error) { toast(error.message); }
+};
+window.openNotification = async (id, targetType, targetId) => {
+    try {
+        await api(`/api/notifications/${encodeURIComponent(id)}/read`, {});
+        await refreshNotifications(true);
+        if (targetType === "chat" || targetType === "request_chat") await refreshDashboardData(true);
+        render();
+        if (targetType === "chat") window.openDonationChat(targetId);
+        else if (targetType === "request_chat") window.openRequestChat(targetId);
+        else if (targetType === "donation") window.openGeneralDonationDetails(targetId);
+        else if (targetType === "request") window.openRequest(targetId);
+    }
+    catch (error) { toast(error.message); }
+};
 window.logout = logout;
 function metricCard(value, label, micro = "") { return `<div class="metric-card"><div class="value">${escapeHtml(value)}</div><div class="label">${escapeHtml(label)}</div>${micro ? `<div class="micro">${escapeHtml(micro)}</div>` : ""}</div>`; }
+function canRequestChat(request, actor = session()) {
+    return Boolean(actor && request && actor.status === "APPROVED" &&
+        ["Approved", "Pledged", "Fulfilled"].includes(request.status) &&
+        ((actor.role === "HOUSEHOLD" && actor.id === request.householdId) ||
+            (actor.role === "BARANGAY_OFFICIAL" && actor.barangay === request.barangay)));
+}
+function requestChatButton(request) {
+    if (!canRequestChat(request)) return "";
+    return `<button class="btn btn-light btn-sm" type="button" onclick="openRequestChat(${toInlineJsArg(request.id)})">${session().role === "HOUSEHOLD" ? "Chat with barangay" : "Chat with household"}</button>`;
+}
+function requestDetailActions(request) {
+    return `<div class="actions"><button class="btn btn-light btn-sm" type="button" onclick="openRequest(${toInlineJsArg(request.id)})">Details</button>${requestChatButton(request)}</div>`;
+}
 function requestList(list, opts = {}) {
     if (!list.length)
         return `<div class="empty">No requests to show.</div>`;
@@ -891,7 +1045,7 @@ function requestList(list, opts = {}) {
       <p>${escapeHtml(r.description)}</p>
       <div class="request-meta">${urgencyBadge(r.urgency)}<span>${escapeHtml(r.category)}</span><span>${formatDate(r.createdAt)}</span>${hoursSince(r.createdAt) >= 72 && r.status === "Under Verification" ? '<span>72h+ pending</span>' : ""}</div>
       ${opts.owner && r.rejectionReason ? `<div class="alert warning"><strong>Rejection reason:</strong> ${escapeHtml(r.rejectionReason)}</div>` : ""}
-      ${opts.actions ? barangayActions(r) : opts.donor && ["Approved", "Under Verification"].includes(r.status) ? `<div class="actions"><button class="btn btn-primary btn-sm" onclick="openPledge(${toInlineJsArg(r.id)})">Pledge support</button><button class="btn btn-light btn-sm" onclick="openRequest(${toInlineJsArg(r.id)})">Details</button></div>` : `<div class="actions"><button class="btn btn-light btn-sm" onclick="openRequest(${toInlineJsArg(r.id)})">Details</button></div>`}
+      ${opts.actions ? barangayActions(r) : opts.donor && ["Approved", "Under Verification"].includes(r.status) ? `<div class="actions"><button class="btn btn-primary btn-sm" onclick="openPledge(${toInlineJsArg(r.id)})">Pledge support</button><button class="btn btn-light btn-sm" onclick="openRequest(${toInlineJsArg(r.id)})">Details</button></div>` : requestDetailActions(r)}
     </div>`).join("")}</div>`;
 }
 function accountBadge(status) {
@@ -956,7 +1110,7 @@ function householdPage(tab = "overview") {
           ${accountApproved
             ? `<li class="dsws-step"><span class="dsws-step-number" aria-hidden="true">1</span><div><strong>Barangay verification</strong><p>Your assigned barangay reviews the relief request.</p></div></li>
               <li class="dsws-step"><span class="dsws-step-number" aria-hidden="true">2</span><div><strong>Donor visibility</strong><p>Donors can reserve support while your request is being verified. Fulfilment requires barangay approval.</p></div></li>
-              <li class="dsws-step"><span class="dsws-step-number" aria-hidden="true">3</span><div><strong>Fulfilment tracking</strong><p>The system records pledge and completion status.</p></div></li>`
+              <li class="dsws-step"><span class="dsws-step-number" aria-hidden="true">3</span><div><strong>Fulfilment tracking</strong><p>After approval, use Chat with barangay to coordinate pickup or delivery and follow your relief status.</p></div></li>`
             : `<li class="dsws-step"><span class="dsws-step-number" aria-hidden="true">1</span><div><strong>Account submitted</strong><p>Your household registration was received.</p></div></li>
               <li class="dsws-step"><span class="dsws-step-number" aria-hidden="true">2</span><div><strong>Barangay account review</strong><p>${escapeHtml(user.barangay)} verifies that your household belongs to the barangay.</p></div></li>
               <li class="dsws-step"><span class="dsws-step-number" aria-hidden="true">3</span><div><strong>Relief request access</strong><p>After approval, the Submit Request feature becomes available.</p></div></li>`}
@@ -980,39 +1134,211 @@ function requestForm() {
     </div>
     <div class="form-row">
       <div class="field"><label for="reqDisaster">Incident type</label><select id="reqDisaster" required><option value="">Select type</option><option>Typhoon</option><option>Flood</option><option>Fire</option><option>Landslide</option><option>Earthquake</option><option>Other</option></select></div>
-        <div class="field"><label for="reqUrgency">Urgency</label><select id="reqUrgency"><option>Normal</option><option>High</option><option>Urgent</option></select></div>
+        <div class="field"><label for="reqUrgency">Urgency</label><select id="reqUrgency"><option>Low</option><option>Medium</option><option>Urgent</option></select></div>
     </div>
     <div class="field"><label for="reqDescription">Description</label><textarea id="reqDescription" required placeholder="Describe what assistance your household needs."></textarea></div>
     <div class="field"><label for="reqPhotos">Photos</label><input id="reqPhotos" type="file" accept="image/*" multiple required><div class="helper">Attach 1 to 3 photos. Images are compressed before saving.</div></div>
-    <div class="field"><label for="reqLocation">Location (optional)</label><div class="form-row"><input id="reqLocation" placeholder="Enter your location or use current location"><button class="btn btn-light" type="button" onclick="captureGps()">Use current location</button></div><div class="helper">Browser permission is required to detect your real location.</div></div>
+    <div class="field request-location"><label for="reqLocation">Household location <span class="location-optional">(optional)</span></label>
+      <div class="form-row location-controls"><input id="reqLocation" maxlength="500" placeholder="Address, landmark, or latitude, longitude" aria-describedby="reqLocationHelp reqLocationStatus" oninput="onRequestLocationInput(this)"><button id="reqLocationButton" class="btn btn-light" type="button" onclick="captureGps()">Use precise location</button></div>
+      <div id="reqLocationHelp" class="helper">Tap once while at the household. We keep trying for an estimated accuracy of 10 metres or better, for up to a minute. Allow precise location if your device offers it.</div>
+      <div class="location-feedback"><p id="reqLocationStatus" class="location-status" role="status" aria-live="polite" aria-atomic="true"></p><button id="reqLocationCancel" class="location-text-button" type="button" onclick="cancelGps()" hidden>Cancel</button></div>
+      <div id="reqLocationResult" class="location-result" hidden></div>
+    </div>
     <button class="btn btn-primary" type="submit">Submit for verification</button>
   </form></div></section></div>`;
 }
+const GPS_TARGET_ACCURACY_METERS = 10;
+const GPS_CAPTURE_DEADLINE_MS = 60000;
+const GPS_REACQUIRE_MS = 15000;
+let locationCapture = null;
+function parseGpsCoordinates(value) {
+    if (typeof value !== "string" || !/^\s*[+-]?\d+(?:\.\d+)?\s*,\s*[+-]?\d+(?:\.\d+)?\s*$/.test(value)) return null;
+    const [latitude, longitude] = value.split(",").map(Number);
+    return Number.isFinite(latitude) && Math.abs(latitude) <= 90 && Number.isFinite(longitude) && Math.abs(longitude) <= 180
+        ? { latitude, longitude } : null;
+}
+function gpsCoordinates(point) { return `${point.latitude.toFixed(6)}, ${point.longitude.toFixed(6)}`; }
+function gpsMapUrl(point) {
+    return `https://www.openstreetmap.org/?mlat=${point.latitude.toFixed(6)}&mlon=${point.longitude.toFixed(6)}#map=18/${point.latitude.toFixed(6)}/${point.longitude.toFixed(6)}`;
+}
+function gpsAccuracyLabel(accuracy) {
+    return accuracy >= 1000 ? `${(accuracy / 1000).toFixed(1)} km` : `${Math.max(1, Math.ceil(accuracy))} m`;
+}
+function gpsSummary(point, accuracy) {
+    const hasAccuracy = typeof accuracy === "number" && Number.isFinite(accuracy) && accuracy >= 0;
+    return `<div class="location-pin-copy"><strong>${hasAccuracy ? "Device location" : "Map pin"}</strong><span class="location-coordinates">${gpsCoordinates(point)}</span>${hasAccuracy ? `<span class="location-accuracy">Estimated accuracy: within ${gpsAccuracyLabel(accuracy)}</span>` : ""}</div>
+      <a class="location-map-link" href="${gpsMapUrl(point)}" target="_blank" rel="noopener noreferrer" aria-label="View pin on map (opens in a new tab)">View pin on map <span aria-hidden="true">↗</span></a>
+      <p class="location-attribution">Map / address data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a></p>`;
+}
+function setLocationStatus(field, message, tone = "") {
+    const status = field.form?.querySelector("#reqLocationStatus");
+    if (status) { status.textContent = message; status.dataset.tone = tone; }
+}
+function updateLocationResult(field) {
+    const result = field.form?.querySelector("#reqLocationResult");
+    if (!result) return;
+    const point = parseGpsCoordinates(field.dataset.coordinates);
+    result.hidden = !point;
+    result.innerHTML = point ? gpsSummary(point, field.dataset.accuracy === undefined ? null : Number(field.dataset.accuracy)) : "";
+}
+function setLocationBusy(field, busy, label = "Finding precise location…") {
+    const button = field.form?.querySelector("#reqLocationButton"), cancel = field.form?.querySelector("#reqLocationCancel");
+    if (button) {
+        button.disabled = busy;
+        button.textContent = busy ? label : "Use precise location";
+        button.setAttribute("aria-busy", String(busy));
+    }
+    if (cancel) cancel.hidden = !busy;
+}
+function stopLocationWatch(capture) {
+    clearTimeout(capture.timer);
+    clearTimeout(capture.retryTimer);
+    capture.generation++;
+    if (capture.watchId !== null) navigator.geolocation?.clearWatch(capture.watchId);
+    capture.watchId = null;
+}
+function cancelLocationCapture() {
+    const capture = locationCapture;
+    if (!capture) return;
+    locationCapture = null;
+    stopLocationWatch(capture);
+    capture.controller?.abort();
+    setLocationBusy(capture.field, false);
+}
+window.cancelGps = () => {
+    const field = locationCapture?.field;
+    cancelLocationCapture();
+    if (field?.isConnected) {
+        setLocationStatus(field, field.dataset.coordinates ? "Stopped. The displayed pin has been kept; check it before submitting." : "Location detection cancelled. You can enter an address or try again.");
+        field.form?.querySelector("#reqLocationButton")?.focus();
+    }
+};
+window.onRequestLocationInput = field => {
+    const hadPin = Boolean(field.dataset.coordinates);
+    if (locationCapture?.field === field) cancelLocationCapture();
+    delete field.dataset.coordinates;
+    delete field.dataset.accuracy;
+    delete field.dataset.capturedAt;
+    const point = parseGpsCoordinates(field.value);
+    if (point) field.dataset.coordinates = gpsCoordinates(point);
+    updateLocationResult(field);
+    setLocationStatus(field, point ? "Coordinates entered. Check the pin before submitting." : hadPin ? "Address edited; the previous pin was removed. Use precise location to add a new pin." : "");
+};
 window.captureGps = () => {
-    if (!navigator.geolocation) {
-        toast("Geolocation is not supported.");
+    const field = document.getElementById("reqLocation");
+    if (!field || locationCapture) return;
+    if (!window.isSecureContext) {
+        setLocationStatus(field, "Location needs a secure connection. Open AYUDA over HTTPS, or use localhost on this computer. You can still enter an address.", "warning");
         return;
     }
-    navigator.geolocation.getCurrentPosition(async p => {
-        const coordinates = `${p.coords.latitude.toFixed(6)}, ${p.coords.longitude.toFixed(6)}`;
-        const locationField = document.getElementById("reqLocation");
-        if (!locationField)
+    if (!navigator.geolocation) {
+        setLocationStatus(field, "This browser does not support location. Enter an address or use a browser with location access.", "warning");
+        return;
+    }
+    // A new attempt must not silently submit a pin from an earlier location.
+    if (field.dataset.accuracy !== undefined) field.value = "";
+    delete field.dataset.coordinates;
+    delete field.dataset.accuracy;
+    delete field.dataset.capturedAt;
+    const manualPoint = parseGpsCoordinates(field.value);
+    if (manualPoint) field.dataset.coordinates = gpsCoordinates(manualPoint);
+    updateLocationResult(field);
+    const capture = { field, watchId: null, timer: null, retryTimer: null, generation: 0, startedAt: Date.now(), best: null, accepted: false, controller: null, finishing: false };
+    locationCapture = capture;
+    const active = () => locationCapture === capture && field.isConnected;
+    const finish = async error => {
+        if (!active() || capture.finishing) return;
+        capture.finishing = true;
+        stopLocationWatch(capture);
+        if (!capture.accepted) {
+            const messages = {
+                1: "Location access is blocked. Allow location in your browser's site settings and turn on device location services, then try again. No automatic pin was saved.",
+                2: "Your device could not determine a location. Turn on location services and allow precise location if available. No automatic pin was saved.",
+                3: "Location detection timed out without a precise reading. No automatic pin was saved. Try a phone with precise location enabled, or enter the household address."
+            };
+            cancelLocationCapture();
+            const message = error?.code !== 1 && capture.best
+                ? `Your device could only locate you within ${gpsAccuracyLabel(capture.best.accuracy)}; ${GPS_TARGET_ACCURACY_METERS} m or better is needed. No automatic pin was saved. Try a phone with precise location enabled, or enter the household address.`
+                : messages[error?.code] || messages[2];
+            setLocationStatus(field, message, "warning");
             return;
-        locationField.value = coordinates;
+        }
+        const point = capture.best;
+        const guidance = `Location captured with an estimated accuracy of ${gpsAccuracyLabel(point.accuracy)}.`;
+        setLocationBusy(field, true, "Looking up address…");
+        setLocationStatus(field, `${guidance} Looking up a nearby address.`, "success");
+        const controller = new AbortController();
+        capture.controller = controller;
+        const lookupTimer = setTimeout(() => controller.abort(), 8000);
         try {
-            const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(p.coords.latitude)}&lon=${encodeURIComponent(p.coords.longitude)}`);
-            if (!response.ok)
-                throw new Error("Location lookup failed");
+            const response = await fetch("/api/location/reverse", {
+                method: "POST", credentials: "same-origin",
+                headers: await authHeaders(true),
+                body: JSON.stringify({ latitude: point.latitude, longitude: point.longitude }), signal: controller.signal
+            });
+            if (!response.ok) throw new Error("Address lookup unavailable");
             const result = await response.json();
-            locationField.value = result.display_name || coordinates;
-            locationField.dataset.coordinates = coordinates;
-            toast("Real location added.");
+            if (!active()) return;
+            const address = typeof result.address === "string" ? result.address.trim().slice(0, 500) : "";
+            if (address) field.value = address;
+            setLocationStatus(field, `${guidance} ${address ? "Nearby address added." : "No nearby address was found; the pin is ready to submit."}`, "success");
         }
         catch {
-            locationField.dataset.coordinates = coordinates;
-            toast("Coordinates added; address lookup was unavailable.");
+            if (active()) setLocationStatus(field, `${guidance} The address could not be loaded; your pin is ready to submit.`, "success");
         }
-    }, () => toast("Location permission was not granted."));
+        finally {
+            clearTimeout(lookupTimer);
+            if (active()) { locationCapture = null; setLocationBusy(field, false); }
+        }
+    };
+    setLocationBusy(field, true);
+    setLocationStatus(field, `Finding precise location… Allow access when prompted. We will retry automatically for up to a minute until accuracy reaches ${GPS_TARGET_ACCURACY_METERS} m or better.`);
+    capture.timer = setTimeout(() => finish({ code: 3 }), GPS_CAPTURE_DEADLINE_MS);
+    const startWatch = () => {
+        if (!active() || capture.finishing) return;
+        clearTimeout(capture.retryTimer);
+        if (capture.watchId !== null) navigator.geolocation.clearWatch(capture.watchId);
+        capture.watchId = null;
+        const generation = ++capture.generation;
+        const current = () => active() && !capture.finishing && generation === capture.generation;
+        // Reacquire while stationary too: a watch may otherwise stop reporting after a coarse fix.
+        capture.retryTimer = setTimeout(startWatch, GPS_REACQUIRE_MS);
+        const onError = error => {
+            if (!current()) return;
+            if (error.code === 1) { finish(error); return; }
+            setLocationStatus(field, error.code === 3 ? "This reading timed out. Retrying automatically for a precise location…" : "Location is temporarily unavailable. Retrying automatically; keep device location services on.");
+            clearTimeout(capture.retryTimer);
+            capture.retryTimer = setTimeout(startWatch, 1000);
+        };
+        try {
+            const watchId = navigator.geolocation.watchPosition(position => {
+                if (!current()) return;
+                const { latitude, longitude, accuracy } = position.coords || {};
+                if (![latitude, longitude, accuracy, position.timestamp].every(Number.isFinite)
+                    || Math.abs(latitude) > 90 || Math.abs(longitude) > 180 || accuracy <= 0
+                    || position.timestamp < capture.startedAt - 1000 || position.timestamp > Date.now() + 1000) return;
+                if (capture.best && capture.best.accuracy <= accuracy) return;
+                capture.best = { latitude, longitude, accuracy };
+                if (accuracy > GPS_TARGET_ACCURACY_METERS) {
+                    setLocationStatus(field, `Improving location… Current estimate: within ${gpsAccuracyLabel(accuracy)}. Waiting for ${GPS_TARGET_ACCURACY_METERS} m or better; no pin has been saved yet.`);
+                    return;
+                }
+                capture.accepted = true;
+                // Only a sufficiently precise fix becomes a saved pin; address lookup is optional.
+                field.value = gpsCoordinates(capture.best);
+                field.dataset.coordinates = field.value;
+                field.dataset.accuracy = String(accuracy);
+                field.dataset.capturedAt = new Date(position.timestamp).toISOString();
+                updateLocationResult(field);
+                finish();
+            }, onError, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
+            // Synchronous or superseded callbacks must not leave an orphaned watch running.
+            if (current()) capture.watchId = watchId;
+            else navigator.geolocation.clearWatch(watchId);
+        }
+        catch { onError({ code: 2 }); }
+    };
+    startWatch();
 };
 function compressRequestPhoto(file) {
     return new Promise((resolve, reject) => {
@@ -1041,14 +1367,26 @@ window.submitRequest = async e => {
         toast("Your household account must be approved before submitting a request.");
         return;
     }
+    if (locationCapture && !locationCapture.accepted) {
+        toast("Still finding a precise location. Wait for a reading within 10 m, or cancel location detection to continue without an automatic pin.");
+        return;
+    }
     const requests = getRequests();
-    const category = formValue("reqCategory"), contact = formValue("reqContact"), disaster = formValue("reqDisaster"), urgency = formValue("reqUrgency"), description = formValue("reqDescription"), locationField = document.getElementById("reqLocation"), location = formValue("reqLocation"), coordinates = locationField?.dataset.coordinates || "", photoFiles = [...(document.getElementById("reqPhotos")?.files || [])];
-    if (!BARANGAYS.includes(user.barangay) || !["Food", "Water", "Medical", "Shelter", "Utility"].includes(category) || !["Typhoon", "Flood", "Fire", "Landslide", "Earthquake", "Other"].includes(disaster) || !["Normal", "High", "Urgent"].includes(urgency)) {
+    const category = formValue("reqCategory"), contact = formValue("reqContact"), disaster = formValue("reqDisaster"), urgency = formValue("reqUrgency"), description = formValue("reqDescription"), locationField = document.getElementById("reqLocation"), location = formValue("reqLocation"), photoFiles = [...(document.getElementById("reqPhotos")?.files || [])];
+    const point = parseGpsCoordinates(locationField?.dataset.coordinates) || parseGpsCoordinates(location);
+    const coordinates = point ? gpsCoordinates(point) : "";
+    const accuracy = locationField?.dataset.accuracy === undefined ? null : Number(locationField.dataset.accuracy);
+    const gpsMetadata = point && Number.isFinite(accuracy) && accuracy >= 0 ? { gpsAccuracy: accuracy, gpsCapturedAt: locationField.dataset.capturedAt } : {};
+    if (!BARANGAYS.includes(user.barangay) || !["Food", "Water", "Medical", "Shelter", "Utility"].includes(category) || !["Typhoon", "Flood", "Fire", "Landslide", "Earthquake", "Other"].includes(disaster) || !["Low", "Medium", "Urgent"].includes(urgency)) {
         toast("Select a valid barangay, category, incident type, and urgency.");
         return;
     }
-    if (!contact || contact.length > 60 || !description || description.length > 2000 || location.length > 500) {
+    if (!contact || contact.length > 60 || !description || description.length > 2000) {
         toast("Enter a contact number and a description of up to 2,000 characters.");
+        return;
+    }
+    if (location.length > 500) {
+        toast("Keep the location to 500 characters or fewer.");
         return;
     }
     if (!photoFiles.length || photoFiles.length > 3 || photoFiles.some(file => !file.type.startsWith("image/"))) {
@@ -1060,6 +1398,10 @@ window.submitRequest = async e => {
         toast(`You already have an active ${category} request.`);
         return;
     }
+    if (locationCapture) {
+        cancelLocationCapture();
+        setLocationStatus(locationField, "The displayed pin is ready to submit.");
+    }
     let photos = [];
     try {
         photos = await Promise.all(photoFiles.map(compressRequestPhoto));
@@ -1068,24 +1410,24 @@ window.submitRequest = async e => {
         toast("One or more photos could not be processed.");
         return;
     }
-    requests.unshift({
-        id: newId("REQ"),
-        householdId: user.id,
-        household: user.name,
-        barangay: user.barangay,
-        contact,
-        category,
-        disaster,
-        urgency,
-        description,
-        status: "Under Verification",
-        createdAt: new Date().toISOString(),
-        location: location || "Not provided",
-        gps: coordinates || "Not provided",
-        photos
-    });
-    if (!setRequests(requests))
+    try {
+        await api("/api/requests", {
+            category,
+            contact,
+            disaster,
+            urgency,
+            description,
+            location: location || "Not provided",
+            gps: coordinates || "Not provided",
+            ...gpsMetadata,
+            photos
+        });
+        await refreshDashboardData(true);
+    }
+    catch (error) {
+        toast(error.message);
         return;
+    }
     toast("Request submitted.");
     goDash("HOUSEHOLD", "history");
 };
@@ -1205,7 +1547,9 @@ function barangayPage(tab = "overview") {
     const pendingRequests = requests.filter(r => r.status === "Under Verification");
     const escalated = pendingRequests.filter(r => hoursSince(r.createdAt) >= 72);
     const pendingAccounts = householdAccountsForBarangay(official.barangay, "PENDING");
-    const pendingGeneralDonations = getDonations().filter(d => d.requestId === null && d.barangay === official.barangay && d.status === "Pending Approval");
+    const allGeneralDonations = getDonations().filter(d => d.requestId === null && d.barangay === official.barangay);
+    const pendingGeneralDonations = allGeneralDonations.filter(d => d.status === "Pending Approval");
+    const reviewedGeneralDonations = allGeneralDonations.filter(d => d.status !== "Pending Approval");
     let content = "";
     if (tab === "accounts") {
         content = accountVerificationPage(official, pendingAccounts);
@@ -1217,10 +1561,18 @@ function barangayPage(tab = "overview") {
         ${dswsPanelHeading("Pending general donations", svg("gift"), `<span class="small muted">${pendingGeneralDonations.length} waiting</span>`)}
         <div class="dsws-panel-body">${generalDonationList(pendingGeneralDonations)}</div>
       </section>
+            <section class="dsws-panel">
+                ${dswsPanelHeading("Reviewed donation conversations", svg("list"), `<span class="small muted">${reviewedGeneralDonations.length}</span>`)}
+                <div class="dsws-panel-body">${generalDonationConversationList(reviewedGeneralDonations)}</div>
+            </section>
       <section class="dsws-panel dsws-table-panel">${dswsPanelHeading("Pending relief requests", dswsSymbol("clock"))}${requestTable(pendingRequests, false, true)}</section></div>`;
     }
+        else if (tab === "donations") {
+                content = `<div class="dsws-overview">${dswsPageHeading(official.barangay, "General donations", "Review contributions for your barangay and continue donor conversations.")}
+            <section class="dsws-panel">${dswsPanelHeading("Donation history", svg("gift"), "", allGeneralDonations.length)}<div class="dsws-panel-body">${generalDonationList(allGeneralDonations)}</div></section></div>`;
+        }
     else if (tab === "all") {
-        content = `<div class="dsws-overview">${dswsPageHeading(official.barangay, "Barangay requests", "All relief requests for your assigned barangay.")}<section class="dsws-panel dsws-table-panel">${dswsPanelHeading("All requests", svg("list"))}${requestTable(requests, false, true)}</section></div>`;
+        content = `<div class="dsws-overview">${dswsPageHeading(official.barangay, "Household requests", "Review requests and chat with approved households to coordinate relief.")}<section class="dsws-panel dsws-table-panel">${dswsPanelHeading("All requests", svg("list"))}${requestTable(requests, false, true)}</section></div>`;
     }
     else if (tab === "profile") {
         content = profilePanel(official);
@@ -1240,16 +1592,22 @@ function barangayPage(tab = "overview") {
     <div class="dsws-panels dsws-panels-equal">
       <section class="dsws-panel">${dswsPanelHeading("Pending household accounts", svg("users"), `<button class="dsws-view-all" onclick="goDash('BARANGAY_OFFICIAL','accounts')">View all <span aria-hidden="true">&rsaquo;</span></button>`)}<div class="dsws-panel-body">${accountCards(pendingAccounts.slice(0, 4))}</div></section>
       <section class="dsws-panel">${dswsPanelHeading("Pending relief requests", dswsSymbol("clock"), `<button class="dsws-view-all" onclick="goDash('BARANGAY_OFFICIAL','pending')">View all <span aria-hidden="true">&rsaquo;</span></button>`)}<div class="dsws-panel-body">${requestList(pendingRequests.slice(0, 4), { actions: true })}</div></section>
-    </div></div>`;
+        </div>
+        <section class="dsws-panel">${dswsPanelHeading("Household relief conversations", svg("list"), `<button class="dsws-view-all" onclick="goDash('BARANGAY_OFFICIAL','all')">View all <span aria-hidden="true">&rsaquo;</span></button>`)}<div class="dsws-panel-body">${requests.some(r => canRequestChat(r)) ? requestList(requests.filter(r => canRequestChat(r)).slice(0, 3), { actions: true }) : '<div class="empty">Household conversations become available after request approval.</div>'}</div></section>
+        <section class="dsws-panel">${dswsPanelHeading("Recent general donations", svg("gift"), `<button class="dsws-view-all" onclick="goDash('BARANGAY_OFFICIAL','donations')">View all <span aria-hidden="true">&rsaquo;</span></button>`, allGeneralDonations.length || null)}<div class="dsws-panel-body">${generalDonationList(allGeneralDonations.slice(0, 3))}</div></section></div>`;
     }
     return dashShell("BARANGAY_OFFICIAL", tab, content);
 }
 function barangayActions(r) {
+    const hasDonorPledge = r.status === "Pledged" || getDonations().some(donation => donation.requestId === r.id);
+    const donorChat = hasDonorPledge
+        ? `<button class="btn btn-light btn-sm" type="button" onclick="openRequestDonorChat(${toInlineJsArg(r.id)})">Chat with donor</button>`
+        : "";
     if (r.status === "Under Verification")
-        return `<div class="actions"><button class="btn btn-primary btn-sm" onclick="approveRequest(${toInlineJsArg(r.id)})">Approve</button><button class="btn btn-light btn-sm" onclick="rejectRequest(${toInlineJsArg(r.id)})">Reject</button><button class="btn btn-light btn-sm" onclick="openRequest(${toInlineJsArg(r.id)})">Details</button></div>`;
+        return `<div class="actions"><button class="btn btn-primary btn-sm" onclick="approveRequest(${toInlineJsArg(r.id)})">Approve</button><button class="btn btn-light btn-sm" onclick="rejectRequest(${toInlineJsArg(r.id)})">Reject</button><button class="btn btn-light btn-sm" onclick="openRequest(${toInlineJsArg(r.id)})">Details</button>${donorChat}</div>`;
     if (r.status === "Pledged")
-        return `<div class="actions"><button class="btn btn-primary btn-sm" onclick="markFulfilled(${toInlineJsArg(r.id)})">Mark fulfilled</button><button class="btn btn-light btn-sm" onclick="openRequest(${toInlineJsArg(r.id)})">Details</button></div>`;
-    return `<div class="actions"><button class="btn btn-light btn-sm" onclick="openRequest(${toInlineJsArg(r.id)})">Details</button></div>`;
+        return `<div class="actions"><button class="btn btn-primary btn-sm" onclick="markFulfilled(${toInlineJsArg(r.id)})">Mark fulfilled</button><button class="btn btn-light btn-sm" onclick="openRequest(${toInlineJsArg(r.id)})">Details</button>${requestChatButton(r)}${donorChat}</div>`;
+    return `<div class="actions"><button class="btn btn-light btn-sm" onclick="openRequest(${toInlineJsArg(r.id)})">Details</button>${requestChatButton(r)}${donorChat}</div>`;
 }
 function reservationDeadline(d) {
     return d.expiresAt ? Date.parse(d.expiresAt) : Date.parse(d.createdAt) + 48 * 3600000;
@@ -1257,7 +1615,7 @@ function reservationDeadline(d) {
 function activeReservation(d, now = Date.now()) {
     return d.status === "Reserved" && reservationDeadline(d) > now;
 }
-window.approveRequest = id => {
+window.approveRequest = async id => {
     const official = currentActor("BARANGAY_OFFICIAL");
     if (!official) {
         toast("An approved barangay official account is required.");
@@ -1269,26 +1627,19 @@ window.approveRequest = id => {
         toast("This request is not available for your approval.");
         return;
     }
-    const active = getDonations().filter(d => d.requestId === id && activeReservation(d));
-    r.status = active.length ? "Pledged" : "Approved";
-    r.approvedAt = new Date().toISOString();
-    r.approvedBy = official.name;
-    r.approvedById = official.id;
-    if (active.length) {
-        r.pledgedAt = active[0].createdAt;
-        r.pledgedBy = active[0].donor;
+    const active = getDonations().some(d => d.requestId === id && activeReservation(d));
+    try {
+        const { request: updated } = await api(`/api/requests/${encodeURIComponent(id)}/approve`, {});
+        await refreshDashboardData(true);
+        toast(updated.status === "Pledged" || active ? "Request approved with active reserved support." : "Request approved.");
     }
-    else {
-        delete r.pledgedAt;
-        delete r.pledgedBy;
-    }
-    delete r.rejectionReason;
-    if (!setRequests(requests))
+    catch (error) {
+        toast(error.message);
         return;
-    toast(active.length ? "Request approved with active reserved support." : "Request approved.");
+    }
     render();
 };
-window.rejectRequest = id => {
+window.rejectRequest = async id => {
     let official = currentActor("BARANGAY_OFFICIAL"), requests = getRequests(), r = requests.find(x => x.id === id);
     if (!official || !r || r.barangay !== official.barangay || r.status !== "Under Verification") {
         toast("This request is not available for your review.");
@@ -1299,101 +1650,188 @@ window.rejectRequest = id => {
         toast("A rejection reason of up to 2,000 characters is required.");
         return;
     }
-    official = currentActor("BARANGAY_OFFICIAL");
-    if (!official) {
-        toast("An approved barangay official account is required.");
+    try {
+        await api(`/api/requests/${encodeURIComponent(id)}/reject`, { reason: reason.trim() });
+        await refreshDashboardData(true);
+    }
+    catch (error) {
+        toast(error.message);
         return;
     }
-    expirePledges();
-    requests = getRequests();
-    r = requests.find(x => x.id === id);
-    if (!r || r.barangay !== official.barangay || r.status !== "Under Verification") {
-        toast("This request is no longer available for your review.");
-        return;
-    }
-    const now = new Date().toISOString(), donations = getDonations();
-    r.status = "Rejected";
-    r.rejectionReason = reason.trim();
-    r.rejectedAt = now;
-    r.reviewedBy = official.name;
-    r.reviewedById = official.id;
-    delete r.pledgedAt;
-    delete r.pledgedBy;
-    donations.filter(d => d.requestId === id && d.status === "Reserved").forEach(d => { d.status = "Cancelled"; d.cancelledAt = now; });
-    if (!commitRecords({ requests, donations }))
-        return;
     toast("Request rejected and reserved donations cancelled.");
     render();
 };
-window.markFulfilled = id => {
+window.markFulfilled = async id => {
     const official = currentActor("BARANGAY_OFFICIAL");
     if (!official) {
         toast("An approved barangay official account is required.");
         return;
     }
     expirePledges();
-    const requests = getRequests(), r = requests.find(x => x.id === id), donations = getDonations(), now = Date.now();
+    const requests = getRequests(), r = requests.find(x => x.id === id), donations = getDonations();
     if (!r || r.barangay !== official.barangay || r.status !== "Pledged") {
         toast("Only a pledged request in your barangay can be fulfilled.");
         return;
     }
-    const active = donations.filter(d => d.requestId === id && activeReservation(d, now));
-    if (!active.length) {
+    const active = donations.some(d => d.requestId === id && activeReservation(d));
+    if (!active) {
         toast("This request has no active pledge to fulfil.");
         render();
         return;
     }
-    r.status = "Fulfilled";
-    r.fulfilledAt = new Date(now).toISOString();
-    r.fulfilledById = official.id;
-    active.forEach(d => { d.status = "Completed"; d.completedAt = r.fulfilledAt; });
-    if (!commitRecords({ requests, donations }))
+    try {
+        await api(`/api/requests/${encodeURIComponent(id)}/fulfill`, {});
+        await refreshDashboardData(true);
+    }
+    catch (error) {
+        toast(error.message);
         return;
+    }
     toast("Marked fulfilled.");
     render();
 };
 // -----------------------------------------------------------------------------
 // Donor portal
 // -----------------------------------------------------------------------------
+function donorGroupValue(value) {
+    return String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+function donorUrgencyRank(value) {
+    return ({ low: 1, normal: 2, medium: 2, high: 3, urgent: 4 })[donorGroupValue(value)] || 0;
+}
+function donorRequestTime(value) {
+    const time = value ? Date.parse(value) : NaN;
+    return Number.isFinite(time) ? time : Infinity;
+}
+function groupDonorRequests(records, { barangay = "", category = "" } = {}) {
+    const groups = new Map(), b = donorGroupValue(barangay), c = donorGroupValue(category);
+    for (const request of records) {
+        if (!["Approved", "Under Verification"].includes(request.status)) continue;
+        const requestBarangay = donorGroupValue(request.barangay), requestCategory = donorGroupValue(request.category);
+        if ((b && requestBarangay !== b) || (c && requestCategory !== c)) continue;
+        const key = JSON.stringify([requestBarangay, requestCategory]);
+        if (!groups.has(key)) groups.set(key, {
+            barangay: BARANGAYS.find(value => donorGroupValue(value) === requestBarangay) || request.barangay.trim(),
+            category: ASSISTANCE_CATEGORIES.find(value => donorGroupValue(value) === requestCategory) || request.category.trim(),
+            requests: []
+        });
+        groups.get(key).requests.push(request);
+    }
+    const result = [...groups.values()].map(group => {
+        group.requests.sort((a, b) => donorUrgencyRank(b.urgency) - donorUrgencyRank(a.urgency)
+            || donorRequestTime(a.createdAt) - donorRequestTime(b.createdAt) || a.id.localeCompare(b.id));
+        const households = new Set(), disasters = new Map();
+        let oldest = Infinity;
+        group.unidentifiedCount = 0;
+        group.approvedCount = 0;
+        group.pendingCount = 0;
+        group.oldestAt = null;
+        for (const request of group.requests) {
+            if (typeof request.householdId === "string" && request.householdId.trim()) households.add(request.householdId.trim());
+            else group.unidentifiedCount++;
+            if (request.status === "Approved") group.approvedCount++;
+            else group.pendingCount++;
+            const disaster = donorGroupValue(request.disaster);
+            if (disaster && !disasters.has(disaster)) disasters.set(disaster, request.disaster.trim());
+            const time = donorRequestTime(request.createdAt);
+            if (time < oldest) { oldest = time; group.oldestAt = request.createdAt; }
+        }
+        group.householdCount = households.size;
+        group.urgency = group.requests[0].urgency;
+        group.disasters = [...disasters.values()].sort((a, b) => a.localeCompare(b));
+        return group;
+    });
+    return result.sort((a, b) => donorUrgencyRank(b.urgency) - donorUrgencyRank(a.urgency)
+        || donorRequestTime(a.oldestAt) - donorRequestTime(b.oldestAt)
+        || a.barangay.localeCompare(b.barangay) || a.category.localeCompare(b.category));
+}
+function donorGroupCounts(group) {
+    return `<div class="donor-group-counts"><span><strong>${group.householdCount}</strong> ${group.unidentifiedCount ? "identified " : ""}${group.householdCount === 1 ? "household" : "households"}</span><span><strong>${group.requests.length}</strong> ${group.requests.length === 1 ? "request" : "requests"}</span></div>
+    ${group.unidentifiedCount ? `<p class="small muted">${group.unidentifiedCount} ${group.unidentifiedCount === 1 ? "request has" : "requests have"} no household identification and ${group.unidentifiedCount === 1 ? "is" : "are"} not included in the household count.</p>` : ""}`;
+}
+function donorGroupStatuses(group) {
+    return `<div class="donor-group-statuses">${group.approvedCount ? `<span class="badge approved">${group.approvedCount} approved</span>` : ""}${group.pendingCount ? `<span class="badge pending">${group.pendingCount} under verification</span>` : ""}</div>`;
+}
+function donorGroupCards(groups, grid = false) {
+    if (!groups.length) return `<div class="empty">No community requests match the selected filters.</div>`;
+    return `<div class="${grid ? "donor-browse-grid" : "list"}">${groups.map(group => `<article class="request-card donor-request-card">
+      <div class="request-top"><div><div class="small muted">${escapeHtml(group.barangay)}</div><h3>${escapeHtml(group.category)} assistance</h3></div><div class="donor-group-urgency"><span class="small muted">Highest urgency</span>${urgencyBadge(group.urgency)}</div></div>
+      ${donorGroupCounts(group)}${donorGroupStatuses(group)}
+      <div class="request-meta"><span>Incidents: ${escapeHtml(group.disasters.join(", ") || "Not specified")}</span><span>Oldest request: ${formatDate(group.oldestAt)}</span></div>
+      <div class="actions"><button class="btn btn-primary btn-sm" type="button" onclick="openDonorGroup(${toInlineJsArg(group.barangay)},${toInlineJsArg(group.category)})">View requests</button></div>
+    </article>`).join("")}</div>`;
+}
 function donorPage(tab = "overview") {
     if (!requireRole("DONOR"))
         return "";
-    let s = session(), reqs = getRequests(), available = reqs.filter(r => ["Approved", "Under Verification"].includes(r.status)), mine = getDonations().filter(d => d.donorId === s.id), content = "";
+    let s = session(), reqs = getRequests(), groups = groupDonorRequests(reqs), mine = getDonations().filter(d => d.donorId === s.id), content = "";
     if (tab === "browse")
-        content = `<div class="dsws-overview">${dswsPageHeading("Community needs", "Browse requests", "You can support a request before barangay approval. The barangay will still verify it.")}
+        content = `<div class="dsws-overview">${dswsPageHeading("Community needs", "Browse requests", "Requests for the same assistance are grouped by barangay. Open a group to review household needs and pledge support, even while verification is pending.")}
     <section class="dsws-panel">${dswsPanelHeading("Find community needs", svg("search"))}<div class="filter-bar dashboard-filter-bar"><div class="field"><label for="filterBarangay">Barangay</label><select id="filterBarangay" onchange="renderBrowse()"><option value="">All barangays</option>${barangayOptions()}</select></div><div class="field"><label for="filterCategory">Category</label><select id="filterCategory" onchange="renderBrowse()"><option value="">All categories</option>${categoryOptions()}</select></div></div></section>
-    <section class="dsws-panel" id="browseList">${browseList(available)}</section></div>`;
+    <section class="dsws-panel" id="browseList" aria-live="polite">${browseList(reqs)}</section></div>`;
     else if (tab === "donations")
         content = `<div class="dsws-overview">${dswsPageHeading("Impact history", "My donations", "Track request support and general community contributions.", `<button class="dsws-report-button" onclick="openGeneralDonation()">${svg("gift")}<span>Make general donation</span><span class="dsws-chevron" aria-hidden="true">›</span></button>`)}<section class="dsws-panel dsws-table-panel">${dswsPanelHeading("Donation history", svg("gift"), "", mine.length)}${donationTable(mine)}</section></div>`;
     else if (tab === "profile")
         content = profilePanel(s);
     else
         content = `<div class="dsws-overview">${dswsPageHeading("Donor portal", "Support community needs.", "Donate immediately while barangay verification continues in parallel.", `<button class="dsws-report-button" onclick="goDash('DONOR','browse')">${svg("search")}<span>Browse requests</span><span class="dsws-chevron" aria-hidden="true">›</span></button>`)}
-    <div class="dsws-metrics">${dswsMetric(available.length, "Available requests", svg("list"), "blue")}${dswsMetric(mine.length, "My donations", svg("gift"), "purple")}${dswsMetric(mine.filter(d => d.status === "Reserved").length, "Active pledges", dswsSymbol("clock"), "amber")}${dswsMetric(mine.filter(d => d.status === "Completed").length, "Completed", svg("check"), "green")}</div>
+    <div class="dsws-metrics">${dswsMetric(groups.length, "Community needs", svg("list"), "blue")}${dswsMetric(mine.length, "My donations", svg("gift"), "purple")}${dswsMetric(mine.filter(d => d.status === "Reserved").length, "Active pledges", dswsSymbol("clock"), "amber")}${dswsMetric(mine.filter(d => d.status === "Completed").length, "Completed", svg("check"), "green")}</div>
     <div class="dsws-panels dsws-panels-equal">
-      <section class="dsws-panel">${dswsPanelHeading("Priority community needs", svg("users"), `<button class="dsws-view-all" onclick="goDash('DONOR','browse')">Browse all<span aria-hidden="true">›</span></button>`)}<div class="dsws-panel-body">${requestList(available.slice(0, 4), { donor: true })}</div></section>
+      <section class="dsws-panel">${dswsPanelHeading("Priority community needs", svg("users"), `<button class="dsws-view-all" onclick="goDash('DONOR','browse')">Browse all<span aria-hidden="true">›</span></button>`)}<div class="dsws-panel-body">${donorGroupCards(groups.slice(0, 4))}</div></section>
       <section class="dsws-panel">${dswsPanelHeading("Give where it is needed most", svg("heart"))}<div class="dsws-panel-body donor-contribution"><span class="donor-contribution-icon" aria-hidden="true">${svg("heart")}</span><p>Make a general contribution even when no household request is available. DSWS can allocate it to urgent community needs.</p><button class="btn btn-primary" onclick="openGeneralDonation()">${svg("gift")}Donate generally</button><div class="alert info donor-pledge-note">Request-specific pledges expire 48 hours after they are created, including time spent waiting for barangay approval.</div></div></section>
     </div></div>`;
     setTimeout(() => { if (tab === "browse")
         renderBrowse(); }, 0);
     return dashShell("DONOR", tab, content);
 }
-function browseList(list) {
-    if (!list.length)
-        return `${dswsPanelHeading("Community requests", svg("list"), "", list.length)}<div class="empty">No community requests match the selected filters.</div>`;
-    return `${dswsPanelHeading("Community requests", svg("list"), "", list.length)}<div class="dsws-panels dsws-panels-equal donor-browse-grid">${list.map(r => `<article class="request-card donor-request-card">
-    <div class="request-top"><div><div class="small muted">${escapeHtml(r.id)} &bull; ${escapeHtml(r.barangay)}</div><h3>${escapeHtml(r.category)} assistance</h3></div><div class="donor-request-badges">${urgencyBadge(r.urgency)} ${badge(r.status)}</div></div>
-    <p>${escapeHtml(r.description)}</p>
-    <div class="request-meta"><span>${escapeHtml(r.disaster)}</span><span>${formatDate(r.createdAt)}</span></div>
-    <div class="actions"><button class="btn btn-primary btn-sm" onclick="openPledge(${toInlineJsArg(r.id)})">Pledge support</button><button class="btn btn-light btn-sm" onclick="openRequest(${toInlineJsArg(r.id)})">Details</button></div>
-  </article>`).join("")}</div>`;
+function browseList(list, filters = {}) {
+    const groups = groupDonorRequests(list, filters), total = groups.reduce((count, group) => count + group.requests.length, 0);
+    return `${dswsPanelHeading("Community needs", svg("list"), "", groups.length)}<p class="small muted donor-browse-summary">${groups.length} ${groups.length === 1 ? "group" : "groups"} &bull; ${total} ${total === 1 ? "request" : "requests"}. Grouped by barangay and assistance category.</p>${donorGroupCards(groups, true)}`;
 }
 window.renderBrowse = () => {
     let b = document.getElementById("filterBarangay")?.value || "", c = document.getElementById("filterCategory")?.value || "";
-    let list = getRequests().filter(r => ["Approved", "Under Verification"].includes(r.status) && (!b || r.barangay === b) && (!c || r.category === c));
     let el = document.getElementById("browseList");
     if (el)
-        el.innerHTML = browseList(list);
+        el.innerHTML = browseList(getRequests(), { barangay: b, category: c });
+};
+window.openDonorGroup = (barangay, category) => {
+    if (!currentActor("DONOR")) {
+        toast("An approved donor account is required.");
+        return;
+    }
+    expirePledges();
+    const group = groupDonorRequests(getRequests(), { barangay, category })[0];
+    if (!group) {
+        toast("These requests are no longer available.");
+        renderBrowse();
+        return;
+    }
+    showModal(`<div class="modal-head"><div><div class="modal-eyebrow">${escapeHtml(group.barangay)}</div><h2>${escapeHtml(group.category)} assistance</h2></div><button class="icon-btn" type="button" aria-label="Close dialog" onclick="closeModal()">${svg("close")}</button></div>
+      ${donorGroupCounts(group)}${donorGroupStatuses(group)}
+      <p class="small muted">Choose a household request to pledge support. Each pledge is tracked separately and reserved for 48 hours, including time awaiting barangay verification.</p>
+      <div class="list">${group.requests.map(r => `<article class="request-card donor-group-member">
+        <div class="request-top"><div><h3>${escapeHtml(r.household)}</h3><div class="small muted">${escapeHtml(r.id)}</div></div><div class="donor-group-statuses">${urgencyBadge(r.urgency)}${badge(r.status)}</div></div>
+        <p>${escapeHtml(r.description)}</p><div class="request-meta"><span>${escapeHtml(r.disaster)}</span><span>${formatDate(r.createdAt)}</span></div>
+        <div class="actions"><button class="btn btn-primary btn-sm" type="button" onclick="openDonorGroupMember(${toInlineJsArg(r.id)},'pledge')">Pledge support</button><button class="btn btn-light btn-sm" type="button" onclick="openDonorGroupMember(${toInlineJsArg(r.id)},'details')">Details</button></div>
+      </article>`).join("")}</div>`);
+    document.querySelector("#modalRoot .modal").classList.add("donor-group-dialog");
+};
+window.openDonorGroupMember = (id, action) => {
+    if (!currentActor("DONOR") || !["pledge", "details"].includes(action)) return;
+    const request = getRequests().find(r => r.id === id);
+    if (!request) { toast("This request is no longer available."); return; }
+    closeModal();
+    if (action === "pledge") openPledge(id);
+    else openRequest(id);
+    const dialog = document.querySelector("#modalRoot .modal");
+    if (!dialog) return;
+    const back = document.createElement("button");
+    back.type = "button";
+    back.className = "btn btn-light btn-sm donor-group-back";
+    back.textContent = "Back to grouped requests";
+    back.addEventListener("click", () => openDonorGroup(request.barangay, request.category));
+    if (action === "details") dialog.querySelector(".request-detail-body").prepend(back);
+    else dialog.querySelector(".modal-head").after(back);
 };
 window.openPledge = id => {
     if (!currentActor("DONOR")) {
@@ -1410,12 +1848,12 @@ window.openPledge = id => {
   <p class="small">${escapeHtml(r.id)} • ${escapeHtml(r.barangay)} • ${escapeHtml(r.category)}</p>
   <p class="small">Reserved for 48 hours from the time you pledge, including while verification is pending.</p>
   <form class="form-grid" onsubmit="submitPledge(event,${toInlineJsArg(id)})">
-    <div class="field"><label for="pledgeType">Donation type</label><select id="pledgeType"><option>Items</option><option>Financial</option></select></div>
-    <div class="field"><label for="pledgeAmount">Donation details / amount</label><input id="pledgeAmount" required maxlength="2000" placeholder="e.g. 10 food packs or ₱2,000"></div>
+    <div class="field"><label for="pledgeType">Donation type</label><select id="pledgeType"><option>Items</option><option>Medical</option><option>Shelter</option><option>Other</option></select></div>
+    <div class="field"><label for="pledgeAmount">Donation details / amount</label><input id="pledgeAmount" required maxlength="2000" placeholder="e.g. 10 food packs or 5 first-aid kits"></div>
     <button class="btn btn-primary">Confirm pledge</button>
   </form>`);
 };
-window.submitPledge = (e, id) => {
+window.submitPledge = async (e, id) => {
     e.preventDefault();
     const donor = currentActor("DONOR");
     if (!donor) {
@@ -1424,7 +1862,7 @@ window.submitPledge = (e, id) => {
         return;
     }
     const type = formValue("pledgeType"), amount = formValue("pledgeAmount");
-    if (!["Items", "Financial"].includes(type) || !amount || amount.length > 2000) {
+    if (!["Items", "Medical", "Shelter", "Other"].includes(type) || !amount || amount.length > 2000) {
         toast("Select a donation type and enter details of up to 2,000 characters.");
         return;
     }
@@ -1435,22 +1873,20 @@ window.submitPledge = (e, id) => {
         closeModal();
         return;
     }
-    const wasPending = r.status === "Under Verification", now = Date.now(), createdAt = new Date(now).toISOString();
-    const donations = getDonations();
-    if (donations.some(d => d.requestId === id && d.donorId === donor.id && activeReservation(d, now))) {
+    if (getDonations().some(d => d.requestId === id && d.donorId === donor.id && activeReservation(d))) {
         toast("You already have an active pledge for this request.");
         return;
     }
-    if (!wasPending) {
-        r.status = "Pledged";
-        r.pledgedAt = createdAt;
-        r.pledgedBy = donor.name;
+    try {
+        await api("/api/donations", { requestId: id, type, amount });
+        await refreshDashboardData(true);
     }
-    donations.unshift({ id: newId("DON"), requestId: id, donorId: donor.id, donor: donor.name, type, amount, status: "Reserved", createdAt, expiresAt: new Date(now + 48 * 3600000).toISOString() });
-    if (!commitRecords({ requests, donations }))
+    catch (error) {
+        toast(error.message);
         return;
+    }
     closeModal();
-    toast(wasPending ? "Pledge reserved for 48 hours while awaiting barangay verification." : "Pledge reserved for 48 hours.");
+    toast(r.status === "Under Verification" ? "Pledge reserved for 48 hours while awaiting barangay verification." : "Pledge reserved for 48 hours.");
     render();
 };
 window.openGeneralDonation = () => {
@@ -1461,13 +1897,13 @@ window.openGeneralDonation = () => {
     showModal(`<div class="modal-head"><h2>Make a general donation</h2><button class="icon-btn" aria-label="Close dialog" onclick="closeModal()">${svg("close")}</button></div>
   <p>Support AYUDA CEBU even when no household request is available. Select the barangay that should receive the donation for review and approval.</p>
   <form class="form-grid" onsubmit="submitGeneralDonation(event)">
-    <div class="field"><label for="generalDonationType">Donation type</label><select id="generalDonationType"><option>Items</option><option>Water</option><option>Food</option><option>Financial</option></select></div>
+    <div class="field"><label for="generalDonationType">Donation type</label><select id="generalDonationType"><option>Items</option><option>Water</option><option>Food</option><option>Medical</option><option>Shelter</option><option>Other</option></select></div>
     <div class="field"><label for="generalDonationBarangay">Barangay</label><select id="generalDonationBarangay" required><option value="">Select barangay</option>${barangayOptions()}</select></div>
-    <div class="field"><label for="generalDonationAmount">Donation details / amount</label><input id="generalDonationAmount" required maxlength="2000" placeholder="e.g. 20 water containers or ₱2,000"></div>
+    <div class="field"><label for="generalDonationAmount">Donation details / amount</label><input id="generalDonationAmount" required maxlength="2000" placeholder="e.g. 20 water containers or 5 first-aid kits"></div>
     <button class="btn btn-primary">Confirm donation</button>
   </form>`);
 };
-window.submitGeneralDonation = e => {
+window.submitGeneralDonation = async e => {
     e.preventDefault();
     const donor = currentActor("DONOR");
     if (!donor) {
@@ -1476,8 +1912,7 @@ window.submitGeneralDonation = e => {
         return;
     }
     const type = formValue("generalDonationType"), amount = formValue("generalDonationAmount"), barangay = formValue("generalDonationBarangay");
-    const donations = getDonations(), createdAt = new Date().toISOString();
-    if (!["Items", "Water", "Food", "Financial"].includes(type) || !amount || amount.length > 2000) {
+    if (!["Items", "Water", "Food", "Medical", "Shelter", "Other"].includes(type) || !amount || amount.length > 2000) {
         toast("Select a donation type and enter details of up to 2,000 characters.");
         return;
     }
@@ -1485,49 +1920,41 @@ window.submitGeneralDonation = e => {
         toast("Select a valid barangay for the donation review.");
         return;
     }
-    donations.unshift({
-        id: newId("DON"),
-        requestId: null,
-        donorId: donor.id,
-        donor: donor.name,
-        barangay,
-        type,
-        amount,
-        status: "Pending Approval",
-        createdAt,
-        reviewedBy: null,
-        approvedAt: null,
-        completedAt: null
-    });
-    if (!setDonations(donations))
+    try {
+        await api("/api/donations", { type, amount, barangay });
+        await refreshDashboardData(true);
+    }
+    catch (error) {
+        toast(error.message);
         return;
+    }
     closeModal();
     toast("General donation submitted for barangay review. Thank you for supporting the community.");
     render();
 };
-window.approveGeneralDonation = id => {
+window.approveGeneralDonation = async id => {
     const official = currentActor("BARANGAY_OFFICIAL");
     if (!official) {
         toast("An approved barangay official account is required.");
         return;
     }
-    const donations = getDonations();
-    const donation = donations.find(d => d.id === id);
+    const donation = getDonations().find(d => d.id === id);
     if (!donation || donation.requestId !== null || donation.barangay !== official.barangay || donation.status !== 'Pending Approval') {
         toast("This donation is not available for your review.");
         return;
     }
-    donation.status = 'Approved';
-    donation.reviewedBy = official.name;
-    donation.reviewedById = official.id;
-    donation.approvedAt = new Date().toISOString();
-    delete donation.rejectionReason;
-    if (!setDonations(donations))
+    try {
+        await api(`/api/donations/${encodeURIComponent(id)}/approve`, {});
+        await refreshDashboardData(true);
+    }
+    catch (error) {
+        toast(error.message);
         return;
+    }
     toast("General donation approved.");
     render();
 };
-window.rejectGeneralDonation = id => {
+window.rejectGeneralDonation = async id => {
     const official = currentActor("BARANGAY_OFFICIAL");
     if (!official) {
         toast("An approved barangay official account is required.");
@@ -1544,13 +1971,14 @@ window.rejectGeneralDonation = id => {
         toast("A rejection reason of up to 2,000 characters is required.");
         return;
     }
-    donation.status = 'Rejected';
-    donation.rejectionReason = reason.trim();
-    donation.reviewedBy = official.name;
-    donation.reviewedById = official.id;
-    donation.rejectedAt = new Date().toISOString();
-    if (!setDonations(donations))
+    try {
+        await api(`/api/donations/${encodeURIComponent(id)}/reject`, { reason: reason.trim() });
+        await refreshDashboardData(true);
+    }
+    catch (error) {
+        toast(error.message);
         return;
+    }
     toast("General donation rejected.");
     render();
 };
@@ -1880,24 +2308,24 @@ function requestTable(list, owner = false, actions = false, dsws = false) {
             <td data-label="Urgency">${urgencyBadge(r.urgency)}</td>
             <td data-label="Status">${badge(r.status)}${dsws && r.status === "Under Verification" && hoursSince(r.createdAt) >= 72 ? '<div class="small" style="color:var(--warning);margin-top:5px">Escalated</div>' : ""}${owner && r.rejectionReason ? `<div class="small" style="margin-top:5px"><strong>Rejection reason:</strong> ${escapeHtml(r.rejectionReason)}</div>` : ""}</td>
             <td data-label="Submitted">${formatDate(r.createdAt)}</td>
-            <td data-label="Action">${actions ? barangayActions(r) : `<button class="btn btn-light btn-sm" onclick="openRequest(${toInlineJsArg(r.id)})">Details</button>`}</td>
+            <td data-label="Action">${actions ? barangayActions(r) : requestDetailActions(r)}</td>
     </tr>`).join("")}</tbody></table></div>`;
 }
 function donationTable(list) {
     if (!list.length)
         return `<div class="panel empty">No donations yet.</div>`;
     return `<div class="table-wrap request-table-wrap donation-table-wrap"><table><thead><tr><th>Donation</th><th>Barangay</th><th>Request</th><th>Type</th><th>Details</th><th>Status</th><th>Date</th><th>Action</th></tr></thead><tbody>${list.map(d => `
-    <tr><td data-label="Donation"><strong>${escapeHtml(d.id)}</strong></td><td data-label="Barangay">${escapeHtml(d.barangay || "Community fund")}</td><td data-label="Request">${escapeHtml(d.requestId || "General donation")}</td><td data-label="Type">${escapeHtml(d.type)}</td><td data-label="Details">${escapeHtml(d.amount)}</td><td data-label="Status">${badge(d.status === "Reserved" ? "Pledged" : d.status)}</td><td data-label="Date">${formatDate(d.createdAt)}</td><td data-label="Action"><button class="btn btn-light btn-sm" onclick="${d.requestId ? `openRequest(${toInlineJsArg(d.requestId)})` : `openGeneralDonationDetails(${toInlineJsArg(d.id)})`}">Details</button></td></tr>`).join("")} </tbody></table></div>`;
+    <tr><td data-label="Donation"><strong>${escapeHtml(d.id)}</strong></td><td data-label="Barangay">${escapeHtml(d.barangay || "Community fund")}</td><td data-label="Request">${escapeHtml(d.requestId || "General donation")}</td><td data-label="Type">${escapeHtml(d.type)}</td><td data-label="Details">${escapeHtml(d.amount)}</td><td data-label="Status">${badge(d.status === "Reserved" ? "Pledged" : d.status)}</td><td data-label="Date">${formatDate(d.createdAt)}</td><td data-label="Action">${d.requestId ? `<div class="actions"><button class="btn btn-light btn-sm" onclick="openRequest(${toInlineJsArg(d.requestId)})">Details</button><button class="btn btn-light btn-sm" type="button" onclick="openDonationChat(${toInlineJsArg(d.id)})">Chat with barangay</button></div>` : `<div class="actions"><button class="btn btn-light btn-sm" onclick="openGeneralDonationDetails(${toInlineJsArg(d.id)})">Details</button><button class="btn btn-light btn-sm" onclick="openDonationChat(${toInlineJsArg(d.id)})">Chat</button></div>`}</td></tr>`).join("")} </tbody></table></div>`;
 }
 function generalDonationActions(donation) {
     if (donation.status !== "Pending Approval") {
-        return `<div class="actions"><button class="btn btn-light btn-sm" onclick="openGeneralDonationDetails(${toInlineJsArg(donation.id)})">Details</button></div>`;
+        return `<div class="actions"><button class="btn btn-light btn-sm" onclick="openGeneralDonationDetails(${toInlineJsArg(donation.id)})">Details</button><button class="btn btn-light btn-sm" onclick="openDonationChat(${toInlineJsArg(donation.id)})">Chat</button></div>`;
     }
-    return `<div class="actions"><button class="btn btn-primary btn-sm" onclick="approveGeneralDonation(${toInlineJsArg(donation.id)})">Approve</button><button class="btn btn-light btn-sm" onclick="rejectGeneralDonation(${toInlineJsArg(donation.id)})">Reject</button></div>`;
+    return `<div class="actions"><button class="btn btn-primary btn-sm" onclick="approveGeneralDonation(${toInlineJsArg(donation.id)})">Approve</button><button class="btn btn-light btn-sm" onclick="rejectGeneralDonation(${toInlineJsArg(donation.id)})">Reject</button><button class="btn btn-light btn-sm" onclick="openDonationChat(${toInlineJsArg(donation.id)})">Chat</button></div>`;
 }
 function generalDonationList(list) {
     if (!list.length)
-        return `<div class="panel empty">No general donations waiting for review.</div>`;
+        return `<div class="panel empty">No general donations yet.</div>`;
     return `<div class="list">${list.map(d => `
     <div class="request-card">
       <div class="request-top">
@@ -1908,6 +2336,16 @@ function generalDonationList(list) {
       <div class="request-meta"><span>${escapeHtml(d.barangay)}</span><span>${formatDate(d.createdAt)}</span></div>
       ${generalDonationActions(d)}
     </div>`).join("")}</div>`;
+}
+function generalDonationConversationList(list) {
+    if (!list.length)
+        return `<div class="empty">No reviewed donation conversations yet.</div>`;
+    return `<div class="list">${list.map(donation => `
+    <article class="request-card">
+      <div class="request-top"><div><strong>${escapeHtml(donation.donor)}</strong><div class="small muted">${escapeHtml(donation.id)} · ${escapeHtml(donation.type)}</div></div>${badge(donation.status)}</div>
+      <p>${escapeHtml(donation.amount)}</p>
+      <div class="actions"><button class="btn btn-light btn-sm" type="button" onclick="openGeneralDonationDetails(${toInlineJsArg(donation.id)})">Details</button><button class="btn btn-light btn-sm" type="button" onclick="openDonationChat(${toInlineJsArg(donation.id)})">Chat</button></div>
+    </article>`).join("")}</div>`;
 }
 window.openGeneralDonationDetails = id => {
     const actor = session();
@@ -1926,7 +2364,270 @@ window.openGeneralDonationDetails = id => {
     <div class="kv"><strong>Details</strong><span>${escapeHtml(donation.amount)}</span></div>
     <div class="kv"><strong>Status</strong><span>${badge(donation.status)}</span></div>
     <div class="kv"><strong>Submitted</strong><span>${formatDate(donation.createdAt)}</span></div>
-    ${donation.rejectionReason ? `<div class="kv"><strong>Rejection reason</strong><span>${escapeHtml(donation.rejectionReason)}</span></div>` : ""}`);
+    ${donation.rejectionReason ? `<div class="kv"><strong>Rejection reason</strong><span>${escapeHtml(donation.rejectionReason)}</span></div>` : ""}
+    ${actor.role === "DONOR" || actor.role === "BARANGAY_OFFICIAL" ? `<div class="actions"><button class="btn btn-primary" type="button" onclick="openDonationChat(${toInlineJsArg(donation.id)})">Open conversation</button></div>` : ""}`);
+};
+
+let activeDonationChat = null;
+function donationChatMessagesHtml(messages, actor, emptyMessage = "No messages yet. Start the conversation to clarify this donation.") {
+    if (!messages.length)
+        return `<p class="donation-chat-empty">${escapeHtml(emptyMessage)}</p>`;
+    return messages.map(message => {
+        const own = message.senderId === actor.id;
+        const role = message.senderRole === "DONOR" ? "Donor" : message.senderRole === "HOUSEHOLD" ? "Household" : "Barangay official";
+        const time = Number.isFinite(Date.parse(message.createdAt))
+            ? new Date(message.createdAt).toLocaleString("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+            : "Time unavailable";
+        return `<article class="donation-chat-message${own ? " is-own" : ""}" data-message-id="${escapeHtml(message.id)}"><div class="donation-chat-message-meta"><strong>${own ? "You" : escapeHtml(message.senderName)} <span>${own ? "" : `· ${role}`}</span></strong><time datetime="${escapeHtml(message.createdAt)}">${escapeHtml(time)}</time></div><p>${escapeHtml(message.message)}</p></article>`;
+    }).join("");
+}
+function donationChatMarkup(donation, actor, messages = []) {
+    const otherParty = actor.role === "DONOR" ? `Barangay team · ${donation.barangay}` : `Donor · ${donation.donor}`;
+        const requestPledge = Boolean(donation.requestId);
+        const status = donation.status === "Reserved" ? "Pledged" : donation.status;
+        return `<div class="modal-head"><div><div class="modal-eyebrow">${requestPledge ? "Household request pledge" : "General donation"}</div><h2>Conversation</h2></div><button class="icon-btn" type="button" aria-label="Close dialog" onclick="closeModal()">${svg("close")}</button></div>
+    <div class="donation-chat">
+            <div class="donation-chat-context"><strong>${escapeHtml(donation.type)} donation</strong><span>${escapeHtml(otherParty)} · ${escapeHtml(status)}</span>${requestPledge ? `<p>Household request · ${escapeHtml(donation.requestId)}</p>` : ""}<p>${escapeHtml(donation.amount)}</p></div>
+      <div id="donationChatMessages" class="donation-chat-messages" role="log" aria-label="Donation conversation" aria-live="polite" aria-relevant="additions text">${donationChatMessagesHtml(messages, actor)}</div>
+      <p id="donationChatStatus" class="small muted donation-chat-status" role="status" aria-live="polite"></p>
+      <form class="donation-chat-form" onsubmit="sendDonationMessage(event)"><label class="sr-only" for="donationChatInput">Message</label><textarea id="donationChatInput" name="message" rows="2" maxlength="2000" required placeholder="Write a message..."></textarea><button class="btn btn-primary" type="submit">Send message</button></form>
+    </div>`;
+}
+window.openRequestDonorChat = async requestId => {
+    if (!currentActor("BARANGAY_OFFICIAL")) {
+        toast("An approved barangay official account is required.");
+        return;
+    }
+    try {
+        await refreshDashboardData(true);
+        const pledges = getDonations().filter(donation => donation.requestId === requestId);
+        if (!pledges.length) {
+            toast("No donor pledge is available for this request.");
+            return;
+        }
+        if (pledges.length === 1) {
+            await window.openDonationChat(pledges[0].id);
+            return;
+        }
+        showModal(`<div class="modal-head"><div><div class="modal-eyebrow">Request pledges</div><h2>Choose a donor</h2></div><button class="icon-btn" type="button" aria-label="Close dialog" onclick="closeModal()">${svg("close")}</button></div>
+          <div class="list">${pledges.map(donation => `<article class="request-card"><div class="request-top"><strong>${escapeHtml(donation.donor)}</strong>${badge(donation.status === "Reserved" ? "Pledged" : donation.status)}</div><p>${escapeHtml(donation.type)} · ${escapeHtml(donation.amount)}</p><button class="btn btn-light btn-sm" type="button" onclick="openDonationChat(${toInlineJsArg(donation.id)})">Chat with ${escapeHtml(donation.donor)}</button></article>`).join("")}</div>`);
+    }
+    catch (error) { toast(error.message); }
+};
+window.openDonationChat = async id => {
+    const actor = session();
+    const donation = getDonations().find(item => item.id === id);
+    const canChat = actor && donation && actor.status === "APPROVED" &&
+        ((actor.role === "DONOR" && actor.id === donation.donorId) ||
+            (actor.role === "BARANGAY_OFFICIAL" && actor.barangay === donation.barangay));
+    if (!canChat) {
+        toast("You cannot access this donation conversation.");
+        return;
+    }
+    const chat = { id, donation, actor, timer: null, loading: false };
+    showModal(donationChatMarkup(donation, actor), () => {
+        if (chat.timer) clearInterval(chat.timer);
+        if (activeDonationChat === chat) activeDonationChat = null;
+    });
+    document.querySelector("#modalRoot .modal")?.classList.add("donation-chat-modal");
+    activeDonationChat = chat;
+    await refreshDonationChat(true);
+    if (activeDonationChat === chat)
+        chat.timer = window.setInterval(() => refreshDonationChat(false), 5000);
+};
+window.refreshDonationChat = async (showFailure = true) => {
+    const chat = activeDonationChat;
+    if (!chat || chat.loading) return;
+    chat.loading = true;
+    try {
+        const { messages } = await api(`/api/donations/${encodeURIComponent(chat.id)}/messages`);
+        if (!Array.isArray(messages)) throw new Error("The server returned an invalid conversation.");
+        if (activeDonationChat !== chat) return;
+        const log = document.getElementById("donationChatMessages");
+        if (!log) return;
+        const signature = messages.map(message => message.id).join("|");
+        if (log.dataset.signature !== signature) {
+            const follow = log.scrollHeight - log.scrollTop - log.clientHeight < 48;
+            log.innerHTML = donationChatMessagesHtml(messages, chat.actor);
+            log.dataset.signature = signature;
+            if (follow) log.scrollTop = log.scrollHeight;
+        }
+        const status = document.getElementById("donationChatStatus");
+        if (status) status.textContent = "";
+    }
+    catch (error) {
+        const status = document.getElementById("donationChatStatus");
+        if (status && showFailure) status.textContent = error.message;
+    }
+    finally {
+        chat.loading = false;
+    }
+};
+window.sendDonationMessage = async event => {
+    event.preventDefault();
+    const chat = activeDonationChat;
+    const form = event.currentTarget;
+    const input = form.elements.message;
+    const button = form.querySelector('button[type="submit"]');
+    const message = input.value.trim();
+    if (!chat || !message || message.length > 2000 || chat.sending) return;
+    chat.sending = true;
+    button.disabled = true;
+    const status = document.getElementById("donationChatStatus");
+    if (status) status.textContent = "Sending…";
+    try {
+        await api(`/api/donations/${encodeURIComponent(chat.id)}/messages`, { message });
+        input.value = "";
+        await refreshDonationChat(true);
+        if (status) status.textContent = "Message sent.";
+    }
+    catch (error) {
+        if (status) status.textContent = error.message;
+    }
+    finally {
+        chat.sending = false;
+        if (button.isConnected) button.disabled = false;
+    }
+};
+let activeRequestChat = null;
+function requestChatContextHtml(request, actor) {
+    const otherParty = actor.role === "HOUSEHOLD" ? `Barangay team · ${request.barangay}` : `Household · ${request.household}`;
+    const step = { Approved: 0, Pledged: 1, Fulfilled: 2 }[request.status];
+    const guidance = {
+        Approved: "Your request is approved and waiting for donor support.",
+        Pledged: "Support is pledged. Coordinate pickup or delivery here.",
+        Fulfilled: "Relief is marked as fulfilled. You can still follow up here."
+    };
+    return `<div class="request-chat-summary"><strong>${escapeHtml(request.category)} relief</strong>${badge(request.status)}</div>
+      <span>${escapeHtml(otherParty)}</span><span>${escapeHtml(request.id)}</span>
+      <ol class="request-chat-progress" aria-label="Relief progress">${["Approved", "Support pledged", "Fulfilled"].map((label, index) => `<li class="${index <= step ? "is-reached" : ""}"${index === step ? ' aria-current="step"' : ""}>${escapeHtml(label)}</li>`).join("")}</ol>
+      <p>${escapeHtml(guidance[request.status] || "")}</p>
+      ${request.fulfilledAt ? `<p>Fulfilled ${formatDate(request.fulfilledAt)}</p>` : ""}`;
+}
+function requestChatMarkup(request, actor) {
+    return `<div class="modal-head"><div><div class="modal-eyebrow">Household relief</div><h2>Conversation</h2></div><button class="icon-btn" type="button" aria-label="Close dialog" onclick="closeModal()">${svg("close")}</button></div>
+      <div class="donation-chat">
+        <div id="requestChatContext" class="donation-chat-context">${requestChatContextHtml(request, actor)}</div>
+        <div id="requestChatMessages" class="donation-chat-messages" role="log" aria-label="Household relief conversation" aria-live="polite" aria-relevant="additions text"><p class="donation-chat-empty">Loading conversation…</p></div>
+        <p id="requestChatStatus" class="small muted donation-chat-status" role="status" aria-live="polite"></p>
+        <form class="donation-chat-form" onsubmit="sendRequestMessage(event)"><label class="sr-only" for="requestChatInput">Message about your relief request</label><textarea id="requestChatInput" name="message" rows="2" maxlength="2000" required disabled placeholder="Ask about relief, pickup, or delivery…"></textarea><button class="btn btn-primary" type="submit" disabled>Send message</button></form>
+      </div>`;
+}
+function updateRequestChatComposer(chat) {
+    if (activeRequestChat !== chat) return;
+    const input = document.getElementById("requestChatInput");
+    if (!input) return;
+    input.disabled = !chat.ready || chat.unavailable || chat.sending;
+    input.form.querySelector('button[type="submit"]').disabled = input.disabled;
+}
+window.openRequestChat = async id => {
+    const actor = session(), request = getRequests().find(item => item.id === id);
+    if (!canRequestChat(request, actor)) {
+        toast("This conversation is available to the household and its barangay after request approval.");
+        return;
+    }
+    const chat = { id, actor, timer: null, loading: null, ready: false, sending: false, unavailable: false };
+    showModal(requestChatMarkup(request, actor), () => {
+        if (chat.timer) clearInterval(chat.timer);
+        if (activeRequestChat === chat) activeRequestChat = null;
+    });
+    document.querySelector("#modalRoot .modal")?.classList.add("donation-chat-modal", "request-chat-modal");
+    activeRequestChat = chat;
+    await refreshRequestChat();
+    if (activeRequestChat === chat && !chat.unavailable)
+        chat.timer = window.setInterval(() => refreshRequestChat(), 5000);
+};
+window.refreshRequestChat = () => {
+    const chat = activeRequestChat;
+    if (!chat || chat.unavailable) return Promise.resolve(false);
+    if (chat.loading) return chat.loading;
+    chat.loading = (async () => {
+        try {
+            const { messages, request } = await api(`/api/requests/${encodeURIComponent(chat.id)}/messages`);
+            if (activeRequestChat !== chat || session()?.id !== chat.actor.id) return false;
+            if (!Array.isArray(messages) || request?.id !== chat.id || !canRequestChat(request, chat.actor))
+                throw new Error("The server returned an invalid conversation.");
+            const log = document.getElementById("requestChatMessages");
+            if (!log) return false;
+            const signature = messages.map(message => message.id).join("|");
+            if (log.dataset.signature !== signature) {
+                const follow = !chat.ready || log.scrollHeight - log.scrollTop - log.clientHeight < 48;
+                log.innerHTML = donationChatMessagesHtml(messages, chat.actor, "No messages yet. Share relief updates or arrange pickup and delivery here.");
+                log.dataset.signature = signature;
+                if (follow) log.scrollTop = log.scrollHeight;
+            }
+            const context = document.getElementById("requestChatContext");
+            const contextHtml = requestChatContextHtml(request, chat.actor);
+            if (chat.contextHtml !== contextHtml) {
+                context.innerHTML = contextHtml;
+                chat.contextHtml = contextHtml;
+            }
+            if (dashboardDataCache.userId === chat.actor.id && Array.isArray(dashboardDataCache.requests))
+                dashboardDataCache.requests = dashboardDataCache.requests.map(item => item.id === request.id ? request : item);
+            chat.ready = true;
+            if (!chat.sending) document.getElementById("requestChatStatus").textContent = "";
+            updateRequestChatComposer(chat);
+            return true;
+        }
+        catch (error) {
+            if (activeRequestChat !== chat) return false;
+            if ([401, 403, 404].includes(error.status)) {
+                chat.unavailable = true;
+                if (chat.timer) clearInterval(chat.timer);
+                document.getElementById("requestChatMessages").replaceChildren();
+            }
+            document.getElementById("requestChatStatus").textContent = error.message;
+            updateRequestChatComposer(chat);
+            return false;
+        }
+        finally { chat.loading = null; }
+    })();
+    return chat.loading;
+};
+window.sendRequestMessage = async event => {
+    event.preventDefault();
+    const chat = activeRequestChat, form = event.currentTarget;
+    const input = form.elements.message, message = input.value.trim();
+    if (!chat || !chat.ready || chat.unavailable || chat.sending) return;
+    const status = document.getElementById("requestChatStatus");
+    if (!message || message.length > 2000) {
+        status.textContent = "Enter a message with 1 to 2,000 characters.";
+        input.focus();
+        return;
+    }
+    chat.sending = true;
+    updateRequestChatComposer(chat);
+    status.textContent = "Sending…";
+    try {
+        await api(`/api/requests/${encodeURIComponent(chat.id)}/messages`, { message });
+        if (activeRequestChat !== chat) return;
+        input.value = "";
+        // Finish an older poll before fetching the conversation containing this message.
+        if (chat.loading) await chat.loading;
+        if (activeRequestChat !== chat) return;
+        const refreshed = await refreshRequestChat();
+        if (activeRequestChat !== chat) return;
+        if (refreshed) {
+            const log = document.getElementById("requestChatMessages");
+            log.scrollTop = log.scrollHeight;
+            status.textContent = "Message sent.";
+        }
+        else if (!chat.unavailable) status.textContent = "Message sent. Waiting to refresh the conversation…";
+    }
+    catch (error) {
+        if (activeRequestChat !== chat) return;
+        status.textContent = error.message;
+        if ([401, 403, 404].includes(error.status)) {
+            chat.unavailable = true;
+            if (chat.timer) clearInterval(chat.timer);
+            document.getElementById("requestChatMessages").replaceChildren();
+        }
+    }
+    finally {
+        chat.sending = false;
+        updateRequestChatComposer(chat);
+        if (activeRequestChat === chat && !input.disabled) input.focus();
+    }
 };
 window.openRequest = id => {
     const actor = session(), r = getRequests().find(x => x.id === id);
@@ -1945,6 +2646,7 @@ window.openRequest = id => {
         <button class="icon-btn request-close" type="button" aria-label="Close dialog" onclick="closeModal()">${svg("close")}</button>
       </header>
       <div class="request-detail-body">
+        ${canRequestChat(r, actor) ? `<div class="actions">${requestChatButton(r)}</div>` : ""}
         <section class="request-summary" aria-label="Household and request status">
           <span class="request-summary-icon" aria-hidden="true">${svg("home")}</span>
           <div class="request-summary-copy"><span>Household</span><strong>${escapeHtml(r.household)}</strong></div>
@@ -1955,7 +2657,7 @@ window.openRequest = id => {
           <div class="request-info"><span>Contact number</span><strong>${escapeHtml(r.contact)}</strong></div>
           <div class="request-info"><span>Assistance category</span><strong>${escapeHtml(r.category)}</strong></div>
           <div class="request-info"><span>Incident type</span><strong>${escapeHtml(r.disaster)}</strong></div>
-          <div class="request-info request-info-wide"><span>Location</span><strong>${escapeHtml(r.location || r.gps || "Not provided")}</strong></div>
+          <div class="request-info request-info-wide"><span>Location</span><strong>${escapeHtml(r.location && r.location !== "Not provided" ? r.location : r.gps || "Not provided")}</strong>${parseGpsCoordinates(r.gps) || parseGpsCoordinates(r.location) ? `<div class="location-result">${gpsSummary(parseGpsCoordinates(r.gps) || parseGpsCoordinates(r.location), r.gpsAccuracy)}</div>` : ""}</div>
           <div class="request-info request-info-wide"><span>Submitted</span><strong>${formatDate(r.createdAt)}</strong></div>
         </div>
         ${r.rejectionReason ? `<section class="request-detail-section request-rejection"><h3>Rejection reason</h3><p class="request-description">${escapeHtml(r.rejectionReason)}</p></section>` : ""}
@@ -2165,7 +2867,34 @@ window.closeModal = () => {
 // -----------------------------------------------------------------------------
 // Router and application lifecycle
 // -----------------------------------------------------------------------------
+function renderDashboardData(routeName, buildPage, setHtml) {
+    const actor = dashboardDataActor();
+    const hasData = dashboardDataCache.userId === actor?.id && Array.isArray(dashboardDataCache.requests) && Array.isArray(dashboardDataCache.donations);
+    if (actor && !hasData && !dashboardDataCache.error) {
+        const scope = actor.role === "DSWS_ADMIN" ? "citywide" : "barangay";
+        setHtml(`<div class="container section"><p class="muted" role="status">Loading ${scope} dashboard data…</p></div>`);
+        refreshDashboardData().then(() => {
+            if (route()[0] === routeName) render();
+        }, () => {
+            if (route()[0] === routeName) render();
+        });
+        return;
+    }
+    if (actor && dashboardDataCache.error && !hasData) {
+        setHtml(`<div class="container section"><div class="alert warning" role="alert"><p>${escapeHtml(dashboardDataCache.error)}</p><button class="btn btn-primary" type="button" onclick="retryDashboardData()">Retry</button></div></div>`);
+        return;
+    }
+    setHtml(buildPage());
+    if (actor && notificationState.userId !== actor.id && !notificationState.loading) {
+        refreshNotifications().then(() => {
+            if (route()[0] === routeName && !document.getElementById("modalRoot")) render();
+        }).catch(() => {
+            if (route()[0] === routeName && !document.getElementById("modalRoot")) render();
+        });
+    }
+}
 function render() {
+    cancelLocationCapture();
     closeModal();
     try {
         if (!authState.ready) {
@@ -2207,19 +2936,19 @@ function render() {
             return;
         }
         if (r === "household") {
-            setHtml(householdPage(sub || "overview"));
+            renderDashboardData(r, () => householdPage(sub || "overview"), setHtml);
             return;
         }
         if (r === "barangay") {
-            setHtml(barangayPage(sub || "overview"));
+            renderDashboardData(r, () => barangayPage(sub || "overview"), setHtml);
             return;
         }
         if (r === "donor") {
-            setHtml(donorPage(sub || "overview"));
+            renderDashboardData(r, () => donorPage(sub || "overview"), setHtml);
             return;
         }
         if (r === "dsws") {
-            setHtml(dswsPage(sub || "overview"));
+            renderDashboardData(r, () => dswsPage(sub || "overview"), setHtml);
             return;
         }
         setHtml(`<div class="container section"><h1 class="page-title">Page not found</h1><a href="#/" class="btn btn-primary">Back home</a></div>`);
@@ -2228,6 +2957,15 @@ function render() {
         renderStorageNotice();
     }
 }
+window.retryDashboardData = () => {
+    if (!dashboardDataActor())
+        return;
+    dashboardDataCache.userId = null;
+    dashboardDataCache.requests = null;
+    dashboardDataCache.donations = null;
+    dashboardDataCache.error = "";
+    render();
+};
 window.addEventListener("DOMContentLoaded", async () => {
     try {
         const savedEmail = sessionStorage.getItem("ayudaRecoveryEmail") || "";
@@ -2243,13 +2981,24 @@ window.addEventListener("DOMContentLoaded", async () => {
     finally { authState.ready = true; render(); }
 });
 window.addEventListener("hashchange", render);
+window.addEventListener("pagehide", () => {
+    const field = locationCapture?.field;
+    cancelLocationCapture();
+    if (field) setLocationStatus(field, field.dataset.coordinates ? "Location detection stopped. The displayed pin has been kept." : "Location detection stopped. Use precise location to try again.");
+});
 window.addEventListener("storage", e => {
     if (e.key === null || Object.values(STORAGE).includes(e.key))
         render();
 });
+let refreshingDashboardData = false;
 function refreshTimedState() {
-    if (expirePledges() && !document.querySelector("#app form") && !document.getElementById("modalRoot"))
-        render();
+    if (authState.ready && dashboardDataActor() && !refreshingDashboardData && !document.querySelector("#app form") && !document.getElementById("modalRoot")) {
+        refreshingDashboardData = true;
+        Promise.allSettled([refreshDashboardData(true), refreshNotifications(true)]).then(() => {
+            if (["household", "barangay", "donor", "dsws"].includes(route()[0]) && !document.querySelector("#app form") && !document.getElementById("modalRoot"))
+                render();
+        }).finally(() => { refreshingDashboardData = false; });
+    }
     renderStorageNotice();
 }
 window.setInterval(refreshTimedState, 30000);

@@ -237,7 +237,13 @@ svg {
   display: block;
   flex-shrink: 0;
   border-radius: 50%;
-  background: url("final-icon.png") center / contain no-repeat;
+  overflow: hidden;
+  background-color: #fff;
+  background-image: url("./main-logo-circle.png");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.65), 0 2px 8px rgba(15, 35, 58, .08);
 }
 
 .brand-logo {
@@ -2394,6 +2400,10 @@ body::before{
   height:50px;
   border-radius:50%;
   background-color:#fff;
+  background-image:url("./main-logo-circle.png");
+  background-position:center;
+  background-repeat:no-repeat;
+  background-size:cover;
   box-shadow:0 0 0 1px rgba(29,29,31,.06),0 7px 20px rgba(20,20,30,.08);
 }
 .brand-copy{font-size:.98rem;letter-spacing:-.03em}
@@ -2746,6 +2756,31 @@ tbody tr:hover{background:#F8FBFF}
 .modal-confirm-actions .btn{min-width:104px}
 .kv{grid-template-columns:minmax(100px,132px) 1fr;padding:10px 0}
 .toast{bottom:26px;border:1px solid rgba(255,255,255,.12);box-shadow:0 18px 44px rgba(20,20,30,.24);padding:12px 16px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.donation-chat-modal{width:min(100%,680px)}
+.donation-chat{display:grid;gap:12px;min-width:0}
+.donation-chat-context{display:grid;gap:4px;padding:12px 14px;border:1px solid #DCEBFC;border-radius:12px;background:#F5F9FF}
+.donation-chat-context strong{color:var(--ink)}
+.donation-chat-context span,.donation-chat-context p{margin:0;color:var(--muted);font-size:.82rem;overflow-wrap:anywhere}
+.donation-chat-messages{display:flex;flex-direction:column;align-items:flex-start;gap:9px;min-height:190px;max-height:min(40vh,360px);overflow:auto;overscroll-behavior:contain;padding:12px;border:1px solid #E3E7ED;border-radius:12px;background:#F8FAFC}
+.donation-chat-empty{align-self:center;margin:auto;color:var(--muted);font-size:.85rem;text-align:center}
+.donation-chat-message{width:fit-content;max-width:min(88%,520px);padding:9px 12px;border:1px solid #E2E8F0;border-radius:12px;background:#fff;overflow-wrap:anywhere}
+.donation-chat-message.is-own{align-self:flex-end;border-color:#C9E2FF;background:#EAF4FF}
+.donation-chat-message-meta{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:5px 14px;color:#26344A;font-size:.75rem}
+.donation-chat-message-meta span,.donation-chat-message time{color:var(--muted);font-size:.7rem;font-weight:400}
+.donation-chat-message p{margin:5px 0 0;color:#303844;font-size:.88rem;line-height:1.45;white-space:pre-wrap}
+.donation-chat-status{min-height:1em;margin:0}
+.donation-chat-form{display:grid;justify-items:end;gap:9px}
+.donation-chat-form textarea{width:100%;min-height:68px;max-height:140px;resize:vertical;padding:10px 12px;border:1px solid #D9DDE5;border-radius:10px;font:inherit;line-height:1.45}
+.donation-chat-form textarea:focus{outline:2px solid var(--blue);outline-offset:2px}
+.request-chat-summary{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.request-chat-summary .badge{color:inherit}
+.request-chat-progress{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;list-style:none;padding:0;margin:8px 0 4px}
+.request-chat-progress li{border-top:3px solid #DCE3ED;padding-top:6px;color:var(--muted);font-size:.75rem;overflow-wrap:anywhere}
+.request-chat-progress li.is-reached{border-color:var(--blue);color:#185AB1}
+.request-chat-progress li[aria-current="step"]{font-weight:800}
+.request-chat-modal .donation-chat-context .request-chat-summary .badge{font-size:.7rem}
+.request-chat-modal textarea:disabled{opacity:.65}
 
 .mobile-bottom{
   left:12px;right:12px;bottom:12px;
@@ -2792,6 +2827,12 @@ tbody tr:hover{background:#F8FBFF}
   .hero-grid{gap:78px}
   .hero-stage{transform:none}
   .dash-main > .container{width:min(calc(100% - 72px),1280px)}
+}
+
+@media(max-width:520px){
+  .donation-chat-modal{padding:16px}
+  .donation-chat-messages{min-height:160px;max-height:36vh;padding:9px}
+  .donation-chat-message{max-width:94%}
 }
 
 @media(max-width:699px){
@@ -2904,6 +2945,26 @@ tbody tr:hover{background:#F8FBFF}
 .dashboard .dash-top .brand-copy{font-size:1.48rem;color:#152440;line-height:1.12}
 .dashboard .dash-top .brand-copy small{font-size:.64rem;color:#526787;letter-spacing:.22em;margin-top:5px}
 .dashboard .user-chip{gap:24px}
+.notification-center{position:relative;flex:0 0 auto}
+.notification-toggle{position:relative;display:grid;place-items:center}
+.notification-toggle svg{width:22px;height:22px}
+.notification-count{position:absolute;top:-5px;right:-5px;min-width:19px;height:19px;padding:0 4px;display:grid;place-items:center;border:2px solid #fff;border-radius:999px;background:#d83b42;color:#fff;font-size:.62rem;font-weight:850;line-height:1}
+.notification-panel{position:absolute;z-index:70;top:calc(100% + 12px);right:0;width:min(390px,calc(100vw - 28px));max-height:min(70vh,560px);overflow:hidden;border:1px solid #d8e4f2;border-radius:12px;background:#fff;box-shadow:0 18px 48px rgba(20,42,75,.2);color:#182744}
+.notification-panel[hidden]{display:none}
+.notification-panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 15px;border-bottom:1px solid #e8eef6}
+.notification-panel-head strong{font-size:.9rem}
+.notification-mark-all{padding:5px 0;border:0;background:none;color:#075fc5;font:inherit;font-size:.74rem;font-weight:750;cursor:pointer}
+.notification-mark-all:disabled{color:#8b98a9;cursor:default}
+.notification-list{max-height:min(62vh,490px);overflow-y:auto;overscroll-behavior:contain}
+.notification-item{width:100%;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:12px 15px;border:0;border-bottom:1px solid #edf1f6;background:#fff;color:inherit;text-align:left;cursor:pointer}
+.notification-item:hover{background:#f4f8ff}
+.notification-item.is-unread{background:#f2f7ff}
+.notification-item-copy{min-width:0;display:grid;gap:4px}
+.notification-item-copy strong{font-size:.78rem;color:#1a2b49;overflow-wrap:anywhere}
+.notification-item-copy>span{font-size:.74rem;line-height:1.4;color:#52647c;overflow-wrap:anywhere}
+.notification-item-copy time{font-size:.67rem;color:#79869a}
+.notification-unread-dot{width:8px;height:8px;flex:0 0 auto;margin-top:5px;border-radius:50%;background:#087aff}
+.notification-empty{margin:0;padding:26px 18px;color:#697a90;font-size:.79rem;text-align:center;overflow-wrap:anywhere}
 .dashboard .user-meta strong{font-size:.88rem;color:var(--dsws-ink)}
 .dashboard .user-meta .muted{font-size:.83rem;color:#526582}
 .dashboard .system-status{font-size:.78rem;padding:11px 15px;background:#ecfff8;border-color:#b9ecdc;color:#087956}
@@ -3071,6 +3132,8 @@ tbody tr:hover{background:#F8FBFF}
   .dashboard .dash-top .brand-copy small{font-size:.43rem}
   .dashboard .dash-top .brand-mark{width:39px;height:39px}
   .dashboard .user-meta,.dashboard .system-status{display:none}
+  .notification-panel{position:fixed;top:82px;left:12px;right:12px;width:auto;max-height:calc(100dvh - 100px)}
+  .notification-list{max-height:calc(100dvh - 165px)}
   .dashboard .dash-main > .container{width:min(calc(100% - 28px),1440px)}
   .dsws-hero{min-height:0;display:block;padding:32px 0 20px}
   .dsws-hero::before{right:-14px;width:100%;opacity:.28}
@@ -3154,8 +3217,64 @@ tbody tr:hover{background:#F8FBFF}
 .donor-request-card .actions{margin-top:auto;padding-top:16px}
 .dashboard .donor-request-badges{display:flex;flex:0 1 auto;flex-wrap:wrap;gap:6px}
 .donor-request-card .request-meta{margin-bottom:2px}
+.donor-browse-summary{margin:0 0 18px;line-height:1.6}
+.donor-group-counts{display:flex;flex-wrap:wrap;gap:10px 22px;margin:18px 0 14px;color:#526987;font-size:.8rem}
+.donor-group-counts>span{display:flex;align-items:baseline;gap:7px}
+.donor-group-counts strong{color:#1268d7;font-size:1.5rem;line-height:1.2;font-variant-numeric:tabular-nums}
+.donor-group-statuses{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.donor-group-statuses .badge{white-space:normal}
+.donor-group-urgency{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0}
+.donor-group-urgency>.small{font-size:.65rem}
+.donor-request-card .request-top>div:first-child{min-width:0;overflow-wrap:anywhere}
+.donor-request-card .request-meta{display:flex;flex-direction:column;align-items:flex-start;gap:5px;overflow-wrap:anywhere}
+.modal.donor-group-dialog{width:min(760px,100%)}
+.donor-group-dialog .modal-head{align-items:flex-start}
+.donor-group-dialog .modal-head>div{min-width:0;overflow-wrap:anywhere}
+.donor-group-dialog .modal-head>.icon-btn{flex-shrink:0}
+.donor-group-dialog>.list{margin-top:20px}
+.donor-group-member{min-width:0;overflow-wrap:anywhere}
+.donor-group-member h3{margin:0 0 5px;font-size:1rem}
+.donor-group-member .request-top{flex-wrap:wrap;gap:12px}
+.donor-group-member .request-top>div{min-width:0}
+.donor-group-member .donor-group-statuses{margin-bottom:0}
+.donor-group-member>p{white-space:pre-wrap}
+.donor-group-back{margin-bottom:12px}
+@media(max-width:600px){
+  .donor-group-dialog .actions .btn{flex:1}
+  .donor-group-dialog .modal-head h2{font-size:1.35rem}
+  .donor-request-card .request-top{flex-wrap:wrap}
+  .donor-group-urgency{flex-direction:row;align-items:center;gap:8px}
+}
 .dashboard .field input[type="file"]{padding:10px;font-size:.8rem}
 .dashboard .field input[type="file"]::file-selector-button{margin-right:10px;padding:8px 11px;border:1px solid #d4e3f6;border-radius:8px;background:#eaf3ff;color:#1357a8;font:inherit;font-weight:650;cursor:pointer}
+
+/* Household location capture and saved request pins. */
+.request-location [hidden]{display:none!important}
+.request-location .location-optional{font-weight:500;color:#617792}
+.request-location .location-controls{grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:12px}
+.request-location .location-controls .btn{min-height:49px;white-space:nowrap}
+.request-location .location-controls .btn[aria-busy="true"]{opacity:.75;cursor:wait}
+.request-location .location-feedback{display:flex;align-items:baseline;gap:12px}
+.request-location .location-status{flex:1;min-width:0;margin:8px 0 0;color:#486587;font-size:.76rem;line-height:1.6;overflow-wrap:anywhere}
+.request-location .location-status:empty{margin:0}
+.request-location .location-status[data-tone="warning"]{color:#895716}
+.request-location .location-status[data-tone="success"]{color:#236848}
+.request-location .location-text-button{flex-shrink:0;min-height:44px;padding:5px 8px;border:0;background:transparent;color:#075fc5;font:inherit;font-size:.76rem;font-weight:700;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.location-result{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding:15px 17px;border:1px solid #d4e3f6;border-radius:12px;background:#f4f8ff;color:#334969;min-width:0}
+.location-result .location-pin-copy{display:grid;gap:4px;min-width:0}
+.location-result .location-pin-copy>strong{font-size:.76rem;font-weight:750}
+.location-result .location-coordinates{font-size:.85rem;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.location-result .location-accuracy{color:#586f8c;font-size:.73rem}
+.location-result .location-map-link{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:8px 12px;border:1px solid #c9dff9;border-radius:9px;background:#fff;color:#075fc5;font-size:.76rem;font-weight:750;text-decoration:none}
+.location-result .location-map-link:hover{background:#e8f2ff;border-color:#8cbbf0}
+.location-result .location-attribution{flex-basis:100%;margin:0;padding-top:9px;border-top:1px solid #dce8f7;color:#617792;font-size:.65rem;line-height:1.5}
+.location-result .location-attribution a{color:#42648c;text-decoration:underline;text-underline-offset:2px}
+.location-result a:focus-visible,.request-location .location-text-button:focus-visible{outline:3px solid #7fbbff;outline-offset:3px}
+@media(max-width:600px){
+  .request-location .location-controls{grid-template-columns:minmax(0,1fr);gap:9px}
+  .location-result{align-items:flex-start;padding:13px;gap:10px}
+  .location-result .location-map-link{width:100%}
+}
 @media(min-width:980px) and (max-width:1260px){
   .dsws-metrics-five{grid-template-columns:repeat(3,minmax(0,1fr))}
   .donor-browse-grid{grid-template-columns:minmax(0,1fr)}

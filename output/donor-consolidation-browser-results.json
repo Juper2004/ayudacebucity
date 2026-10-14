@@ -1,0 +1,51 @@
+{
+  "passed": 11,
+  "failed": 0,
+  "results": [
+    {
+      "label": "20 households requesting Food in Apas consolidate into one card without changing stored requests",
+      "pass": true
+    },
+    {
+      "label": "Different barangays and categories stay separate and both filters apply together",
+      "pass": true
+    },
+    {
+      "label": "Case and whitespace variants consolidate, while ineligible statuses are excluded",
+      "pass": true
+    },
+    {
+      "label": "Repeated household requests and unidentified records do not inflate the known household count",
+      "pass": true
+    },
+    {
+      "label": "Overview uses the same community groups and metric",
+      "pass": true
+    },
+    {
+      "label": "View requests opens all 20 members and Details opens the actual selected request",
+      "pass": true
+    },
+    {
+      "label": "Pledging one approved member updates only that request and leaves 19 grouped members",
+      "pass": true
+    },
+    {
+      "label": "Pledging a pending member preserves verification and other group members",
+      "pass": true
+    },
+    {
+      "label": "Browse, group details, and pledge dialog fit a 390px viewport",
+      "pass": true
+    },
+    {
+      "label": "Browse, group details, and pledge dialog fit a 320px viewport",
+      "pass": true
+    },
+    {
+      "label": "No unhandled browser exceptions",
+      "pass": true
+    }
+  ],
+  "exceptions": []
+}

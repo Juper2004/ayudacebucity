@@ -7,10 +7,9 @@ A mobile-first relief coordination prototype for Cebu City's 80 barangays, with 
 - HTML5
 - CSS3
 - Vanilla JavaScript
-- Node.js and Express for authentication and account management
-- SQLite for accounts, password hashes, sessions, and recovery records
+- Node.js and Express for authentication, account management, and relief operations
+- SQLite for accounts, password hashes, sessions, recovery records, requests, and donations
 - Gmail SMTP with an App Password, or Resend, for recovery email
-- `localStorage` for the remaining relief-request and donation prototype records
 
 ## Included workflows
 
@@ -19,10 +18,51 @@ A mobile-first relief coordination prototype for Cebu City's 80 barangays, with 
 - Barangay request approval/rejection
 - Donor request-specific pledges
 - General donations routed to a selected barangay
+- Private, donation-specific chat between donors and approved officials for household pledges and general donations
+- Request-specific chat between households and their barangay after relief request approval
+- Role-scoped dashboard notifications for request, donation, and chat updates
 - DSWS approval of barangay official accounts
 - 72-hour request escalation indicators
 - 48-hour pledge reservations
 - DSWS citywide reporting and PDF summary export
+
+## Household relief conversations
+
+After a barangay official approves a relief request, the household can select **Chat with barangay** on Home, My Requests, or Request details. Officials can select **Chat with household** from Home, Requests, or Request details. Each request has a separate conversation, available only to its approved household account and approved officials assigned to that request's barangay.
+
+Use the conversation to share relief updates and arrange pickup or delivery. Messages include the sender and time, are saved in SQLite, and refresh every five seconds while the conversation is open. The relief progress display follows the request's current Approved, Pledged, or Fulfilled status. Chat stays available after fulfilment for follow-up; pending and rejected requests do not have chat access. Sending a message does not change the relief status.
+
+New messages notify the other party through the dashboard bell; selecting the notification opens the relevant conversation. Household messages notify the approved barangay team, and official replies notify the request's household. Messages support up to 2,000 characters. Restart the Node server after updating so the request chat API and its database table are available; the table is created automatically without replacing existing records.
+
+## Donor pledge conversations
+
+After pledging support for a household request, donors can select **Chat with barangay** beside the pledge in **Donor > Donations**. Barangay officials can select **Chat · donor name** beside the matching request on Home or Requests. Each pledge has its own private conversation between that donor and approved officials assigned to the request's barangay; it is separate from the household's conversation with the barangay. Messages are saved with the pledge, refresh every five seconds, and notify the other party. Selecting a chat notification opens the matching pledge conversation. The thread remains available for follow-up after the pledge status changes.
+
+Run `node --test tests/request-chat.test.cjs` for request chat API checks. On Windows with Chrome installed, `node output/request-chat-browser-check.cjs` checks both dashboards using synthetic accounts and an in-memory database.
+
+## Consolidated donor requests
+
+**Donor > Browse** and the donor Home page group available requests by **barangay + assistance category**. For example, 20 households in Apas requesting Food appear as one Food assistance card with **20 households** and **20 requests**. Barangay and category filters apply to these groups, and the Community needs count shows groups rather than individual requests.
+
+Each card shows the highest urgency, approved and under-verification request counts, incident types, and oldest request date. Groups appear by highest urgency, then oldest request. Household totals count distinct account IDs; repeated requests from one account count as one household, and older requests without an account ID are identified separately without guessing household identity from names.
+
+Select **View requests** to review the individual households, descriptions, and statuses, then use **Details** or **Pledge support**. Pledges remain attached to the selected household request, with the existing 48-hour reservation and barangay verification workflow. Only Approved and Under Verification requests are included; pledged, fulfilled, and rejected requests are excluded. Consolidation does not merge or delete the original household records.
+
+## Household location
+
+In **Household > New Request**, tap **Use precise location** once while at the household and allow the browser's location request. AYUDA requests fresh, high-accuracy readings, reacquires location automatically, and waits up to one minute for a device-reported accuracy of **10 metres or better**. Only a qualifying reading is added to the form and used for address lookup. A rough reading such as 271 metres is never saved as an automatic pin, including when the attempt times out or is cancelled. Old or invalid readings are ignored.
+
+The 10-metre threshold filters the device's estimated accuracy; it does not guarantee an exact household entrance. [Browser high-accuracy mode](https://developer.mozilla.org/en-US/docs/Web/API/Geolocation/getCurrentPosition) is a request to the device, and [reported accuracy is an estimate](https://developer.mozilla.org/en-US/docs/Web/API/GeolocationCoordinates/accuracy). A Windows laptop or desktop may be unable to reach this threshold. In that case, use a phone with precise location enabled or enter the household address manually. Changing a website cannot give a computer GPS hardware or override location permissions.
+
+An accepted pin is ready to submit immediately, even if address lookup fails. Its coordinates, accuracy, and capture time are retained in the saved request, and its details include a map link. Starting another capture removes the previous automatic pin and address; editing the address also removes the previous pin to avoid mismatched coordinates. Manually entered text is preserved while a new capture is pending. You can enter an address, landmark, or `latitude, longitude` manually, or leave location blank. Manual coordinates are not labelled as device-verified. Cancel stops detection; an already accepted pin is kept. Temporary location errors retry automatically within the same minute, while denied permission stops immediately.
+
+Browser location requires **HTTPS**, or **http://localhost:3000** on the computer running AYUDA. An HTTP LAN address on another device does not provide a secure location context. Enable location services on the device and allow location for the site in browser settings if access was blocked.
+
+Address lookup uses the authenticated `POST /api/location/reverse` endpoint, so it works with the app's same-origin security policy. The server uses the existing OpenStreetMap Nominatim provider, a seven-second timeout, a bounded in-memory cache, and a shared request limit of at most one provider request every 1.1 seconds. If busy or unavailable, the pin remains usable. Coordinates go to the provider for address lookup; household names, contact details, and request descriptions are not sent.
+
+The public provider is intended for light, user-triggered use. Follow the [Nominatim usage policy](https://operations.osmfoundation.org/policies/nominatim/), including its application-wide one-request-per-second limit and OpenStreetMap attribution. Set optional `GEOCODING_REVERSE_URL` to switch to a Nominatim-compatible provider and `GEOCODING_USER_AGENT` to identify your deployment. Multiple server processes or larger deployments need a shared limiter/cache or an appropriate hosted/self-hosted provider. No API key is needed for the default provider.
+
+Run `npm test` for the backend checks. On Windows with Chrome installed, `node output/location-browser-check.cjs` runs isolated browser checks for capture, permissions, fallback, cancellation, navigation, submission, and mobile layout. It uses synthetic locations and an in-memory account database.
 
 ## PDF summary format
 
@@ -32,7 +72,7 @@ On phones and other touch devices, wait for **Your PDF is ready**, then tap **Do
 
 The report includes request totals, fulfilment rate, pending and escalated requests, active contributions, request and donation status counts, unmet needs by assistance category, and a paginated breakdown of barangays with requests. Empty reports show zero counts. Fulfilment rate uses all requests (including rejected requests); escalated requests have been under verification for at least 72 hours. Active contributions are reserved donations, and donation figures are counts rather than cash totals.
 
-The report covers all available relief records saved in the current browser. It contains aggregate figures, without household details, donor details, photos, or contact information. PDF libraries are installed with `npm install` and served locally by the Node server when exporting; no external CDN is used. Restart the server after updating to enable the PDF asset routes.
+The report covers the relief records in the server database. It contains aggregate figures, without household details, donor details, photos, or contact information. PDF libraries are installed with `npm install` and served locally by the Node server when exporting; no external CDN is used. Restart the server after updating to enable the PDF asset routes.
 
 ## Design system
 
@@ -72,9 +112,19 @@ Configure Gmail below, then start the app:
 npm start
 ```
 
-Open **http://localhost:3000**. Keep using this address so cookies and browser prototype records stay on the same origin. Authentication requires the Node server; opening `index.html` directly or using a static-only server cannot run the account APIs.
+Open **http://localhost:3000**. Keep using this address so cookies stay on the same origin. Authentication and relief data require the Node server; opening `index.html` directly or using a static-only server cannot run the APIs.
 
 In VS Code, select **Launch AYUDA backend and Chrome** in **Run and Debug**, then press **F5**. It starts the backend and opens Chrome when the server is ready. **Launch AYUDA in Chrome** opens the browser when you have already started the backend with `npm start`.
+
+### Test multiple accounts in separate tabs
+
+You can log in as DSWS, a barangay official, and a household in three tabs of the same browser at **http://localhost:3000/#/login**. Logging in, switching accounts, or logging out in one tab affects only that tab. Refreshing a tab keeps its login until the server session expires after eight hours. A new tab starts logged out. Password recovery still revokes every session for the account whose password was reset; changing a password while signed in keeps the current session and revokes that account's other sessions.
+
+After installing this change, restart `npm start`, hard-refresh each existing tab with **Ctrl+Shift+R**, and log in once in each tab. Old shared-cookie logins are not automatically adopted by the new tabs.
+
+Each tab stores a random, non-secret selector in [`sessionStorage`](https://developer.mozilla.org/en-US/docs/Web/API/Window/sessionStorage) and sends it in `X-Ayuda-Tab`. The server selects that tab's separate **HttpOnly** cookie; authentication tokens stay out of JavaScript storage. Chrome on localhost also uses a [Web Lock](https://developer.mozilla.org/en-US/docs/Web/API/Web_Locks_API) to give duplicated tabs or windows a fresh selector when the original tab is open. In browsers without Web Locks, open new tabs from the address bar instead of duplicating an existing tab. If browser storage is blocked, the tab remains isolated but must log in again after a reload.
+
+Run `npm test` for the backend regressions. On Windows with Chrome installed, run `node output/tab-session-browser-check.cjs` to check multiple tabs sharing one browser cookie jar. The check uses test accounts and an in-memory database.
 
 ## Send recovery codes with Gmail
 
@@ -131,7 +181,7 @@ Automated tests do not require your Gmail App Password. Delivery to a real inbox
 
 Account credentials and authentication now live on the server. Existing browser-only accounts are not imported automatically; register them again or create the initial DSWS administrator through `.env`.
 
-Relief requests, pledges, and donations still use the browser prototype storage. They are not shared across browsers or devices, and changing the local site address gives them a different storage origin. This is an authentication backend, not a complete production backend for relief operations. A full deployment also needs server-side request and donation APIs, authorization, data migration, backups, and deployment configuration.
+Relief requests, pledges, and donations are stored in SQLite and shared according to the signed-in user's role and barangay. Older browser-only prototype records are not imported automatically, so they do not appear in dashboard totals; the original browser storage is left untouched. This local prototype still needs production deployment hardening, operational backups, and a reviewed data-migration plan before handling real relief operations.
 
 `.env`, `data/`, and `node_modules/` are ignored by Git. Keep the SQLite database if you want to preserve accounts between server restarts.
 

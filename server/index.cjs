@@ -20,6 +20,10 @@ async function main() {
     secureCookies,
     otpSecret: secret,
     mailer,
+    geocoding: {
+      reverseUrl: process.env.GEOCODING_REVERSE_URL,
+      userAgent: process.env.GEOCODING_USER_AGENT
+    },
     admin: process.env.ADMIN_EMAIL || process.env.ADMIN_PASSWORD ? {
       name: process.env.ADMIN_NAME,
       email: process.env.ADMIN_EMAIL,

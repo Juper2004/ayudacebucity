@@ -6,6 +6,7 @@ const { basename, dirname, join, resolve } = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
 const test = require('node:test');
 const { createApp } = require('../server/app.cjs');
+const { hashPassword } = require('../server/security.cjs');
 
 const PASSWORD = 'Testing-password-938!';
 const NEW_PASSWORD = 'Changed-password-174!';
@@ -112,6 +113,195 @@ async function fixture(t, options = {}) {
   };
 }
 
+// Browsers send every matching cookie on the same origin, even across tabs.
+function sharedBrowser(app) {
+  const cookies = new Map();
+  async function request(tabId, path, options = {}) {
+    const response = await app.request(path, {
+      ...options,
+      cookie: [...cookies].map(([name, value]) => `${name}=${value}`).join('; '),
+      headers: { ...(tabId === undefined ? {} : { 'X-Ayuda-Tab': tabId }), ...options.headers },
+    });
+    for (const setCookie of response.headers.getSetCookie()) {
+      const pair = setCookie.split(';')[0];
+      const separator = pair.indexOf('=');
+      const name = pair.slice(0, separator);
+      const value = pair.slice(separator + 1);
+      if (!value || /Max-Age=0(?:;|$)/i.test(setCookie)) cookies.delete(name);
+      else cookies.set(name, value);
+    }
+    return response;
+  }
+  return {
+    cookies, request,
+    async login(tabId, email, password = PASSWORD) {
+      const response = await request(tabId, '/api/auth/login', { method: 'POST', body: { email, password } });
+      assert.equal(response.status, 200, response.text);
+      return response;
+    },
+    async user(tabId) {
+      const response = await request(tabId, '/api/auth/session');
+      assert.equal(response.status, 200, response.text);
+      return response.data.user;
+    },
+  };
+}
+
+async function multiRoleFixture(t, options = {}) {
+  const admin = { name: 'Test Administrator', email: 'admin@example.com', password: PASSWORD };
+  const app = await fixture(t, { admin, ...options });
+  const browser = sharedBrowser(app);
+  const tabs = { admin: 'a'.repeat(32), official: 'b'.repeat(32), household: 'c'.repeat(32), other: 'd'.repeat(32) };
+  const official = await app.register({ email: 'official@example.com', role: 'BARANGAY_OFFICIAL' });
+  const household = await app.register({ role: 'HOUSEHOLD' });
+  const adminLogin = await browser.login(tabs.admin, admin.email);
+  const approval = await browser.request(tabs.admin, `/api/accounts/${official.id}/approve`, { method: 'POST', body: {} });
+  assert.equal(approval.status, 200, approval.text);
+  await browser.login(tabs.official, official.email);
+  await browser.login(tabs.household, household.email);
+  return { app, browser, tabs, admin: adminLogin.data.user, official, household };
+}
+
+test('one browser can keep DSWS, barangay, household and legacy sessions independent', async t => {
+  const { app, browser, tabs, admin, official, household } = await multiRoleFixture(t);
+  const donor = await app.register({ email: 'donor@example.com' });
+  await browser.login(undefined, donor.email);
+  assert.equal(browser.cookies.size, 4, 'all four sessions share the same browser cookie jar');
+  for (const [tabId, expected] of [[tabs.admin, admin], [tabs.official, official], [tabs.household, household], [undefined, donor]]) {
+    assert.equal((await browser.user(tabId)).id, expected.id);
+  }
+  const accounts = async tabId => {
+    const response = await browser.request(tabId, '/api/accounts');
+    assert.equal(response.status, 200, response.text);
+    return response.data.users.map(user => user.id).sort();
+  };
+  assert.deepEqual(await accounts(tabs.admin), [admin.id, official.id, household.id, donor.id].sort());
+  assert.deepEqual(await accounts(tabs.official), [official.id, household.id].sort());
+  assert.deepEqual(await accounts(tabs.household), [household.id]);
+  assert.deepEqual(await accounts(undefined), [donor.id]);
+  const forbidden = await browser.request(tabs.household, '/api/accounts/officials', { method: 'POST', body: {} });
+  assert.equal(forbidden.status, 403, 'another tab\'s admin cookie grants no privileges');
+
+  const adminCookieName = `ayudaSession_${tabs.admin}`;
+  const originalToken = browser.cookies.get(adminCookieName);
+  await browser.login(tabs.admin, household.email);
+  assert.notEqual(browser.cookies.get(adminCookieName), originalToken, 'switching accounts rotates the selected session');
+  const stale = await app.request('/api/auth/session', {
+    headers: { 'X-Ayuda-Tab': tabs.admin }, cookie: `${adminCookieName}=${originalToken}`,
+  });
+  assert.equal(stale.data.user, null, 'the previous token for this tab is revoked');
+  assert.deepEqual(await accounts(tabs.admin), [household.id]);
+  assert.equal((await browser.user(tabs.official)).id, official.id);
+  assert.equal((await browser.user(tabs.household)).id, household.id);
+  assert.equal((await browser.user(undefined)).id, donor.id);
+
+  const logout = await browser.request(tabs.household, '/api/auth/logout', { method: 'POST', body: {} });
+  assert.equal(logout.status, 200, logout.text);
+  assert.equal(browser.cookies.has(`ayudaSession_${tabs.household}`), false);
+  assert.equal(await browser.user(tabs.household), null);
+  assert.equal((await browser.user(tabs.admin)).id, household.id, 'logout preserves other sessions of the same account');
+  assert.equal((await browser.user(tabs.official)).id, official.id);
+  assert.equal((await browser.user(undefined)).id, donor.id);
+  await browser.request(undefined, '/api/auth/logout', { method: 'POST', body: {} });
+  assert.equal(await browser.user(undefined), null);
+  assert.equal((await browser.user(tabs.official)).id, official.id, 'legacy logout preserves tab sessions');
+});
+
+test('tab selectors reject malformed headers and never fall back to another cookie', async t => {
+  const app = await fixture(t);
+  const user = await app.register();
+  const browser = sharedBrowser(app);
+  const tabId = 'a'.repeat(32);
+  await browser.login(undefined, user.email);
+  await browser.login(tabId, user.email);
+  assert.equal(await browser.user('b'.repeat(32)), null, 'a missing selected cookie ignores valid cookies for other tabs and legacy clients');
+  for (const value of ['', 'short', 'A'.repeat(32), 'g'.repeat(32), 'a'.repeat(31), 'a'.repeat(33), `${tabId}, ${tabId}`]) {
+    for (const [path, options] of [
+      ['/api/auth/session', {}], ['/api/accounts', {}],
+      ['/api/auth/logout', { method: 'POST', body: {} }], ['/api/unknown', {}],
+    ]) {
+      const response = await browser.request(value, path, options);
+      assert.equal(response.status, 400, `${JSON.stringify(value)} ${path}: ${response.text}`);
+      assert.equal(response.headers.get('set-cookie'), null);
+    }
+  }
+  const selectedName = `ayudaSession_${tabId}`;
+  const token = browser.cookies.get(selectedName);
+  for (const value of ['', 'invalid', '0'.repeat(64)]) {
+    browser.cookies.set(selectedName, value);
+    assert.equal(await browser.user(tabId), null, 'an invalid selected token cannot borrow the legacy identity');
+    assert.equal((await browser.request(tabId, '/api/accounts')).status, 401);
+    assert.equal((await browser.user(undefined)).id, user.id);
+  }
+  browser.cookies.set(selectedName, token);
+  browser.cookies.delete('ayudaSession');
+  assert.equal(await browser.user(undefined), null, 'headerless clients cannot borrow a tab cookie');
+  assert.equal((await browser.user(tabId)).id, user.id);
+  const crossSite = await browser.request(tabId, '/api/auth/logout', {
+    method: 'POST', body: {}, headers: { Origin: 'https://untrusted.example' },
+  });
+  assert.equal(crossSite.status, 403);
+  const plainText = await browser.request(tabId, '/api/auth/logout', {
+    method: 'POST', body: '{}', headers: { 'Content-Type': 'text/plain' },
+  });
+  assert.equal(plainText.status, 415);
+  assert.equal((await browser.user(tabId)).id, user.id);
+});
+
+test('tab sessions retain secure cookie attributes and expire after eight hours', async t => {
+  const app = await fixture(t, { secureCookies: true });
+  const user = await app.register();
+  const browser = sharedBrowser(app);
+  const tabId = '1'.repeat(32);
+  const login = await browser.login(tabId, user.email);
+  const setCookie = login.headers.get('set-cookie');
+  assert.ok(setCookie.startsWith(`__Host-ayudaSession_${tabId}=`));
+  assert.match(setCookie, /; HttpOnly(?:;|$)/i);
+  assert.match(setCookie, /; Secure(?:;|$)/i);
+  assert.match(setCookie, /; SameSite=Lax(?:;|$)/i);
+  assert.match(setCookie, /; Path=\/(?:;|$)/i);
+  assert.match(setCookie, /; Max-Age=28800(?:;|$)/i);
+  assert.doesNotMatch(setCookie, /; Domain=/i);
+  app.advance(8 * 60 * 60 * 1000 - 1);
+  assert.equal((await browser.user(tabId)).id, user.id);
+  app.advance(1);
+  assert.equal(await browser.user(tabId), null, 'the server rejects an expired token even if the client sends it');
+  const logout = await browser.request(tabId, '/api/auth/logout', { method: 'POST', body: {} });
+  assert.ok(logout.cookie.startsWith(`__Host-ayudaSession_${tabId}=`));
+  assert.match(logout.headers.get('set-cookie'), /; HttpOnly(?:;|$)/i);
+  assert.match(logout.headers.get('set-cookie'), /; Secure(?:;|$)/i);
+});
+
+test('password change and recovery revoke only the affected account across tab and legacy sessions', async t => {
+  const { app, browser, tabs, admin, official, household } = await multiRoleFixture(t);
+  await browser.login(tabs.other, household.email);
+  await browser.login(undefined, household.email);
+  const changed = await browser.request(tabs.household, '/api/auth/change-password', {
+    method: 'POST', body: { currentPassword: PASSWORD, newPassword: NEW_PASSWORD },
+  });
+  assert.equal(changed.status, 200, changed.text);
+  assert.equal((await browser.user(tabs.household)).id, household.id);
+  assert.equal(await browser.user(tabs.other), null);
+  assert.equal(await browser.user(undefined), null);
+  assert.equal((await browser.user(tabs.admin)).id, admin.id);
+  assert.equal((await browser.user(tabs.official)).id, official.id);
+
+  await browser.login(tabs.other, household.email, NEW_PASSWORD);
+  await browser.login(undefined, household.email, NEW_PASSWORD);
+  const code = await app.sendCode(household.email);
+  const reset = await browser.request(tabs.household, '/api/auth/reset-password', {
+    method: 'POST', body: { email: household.email, code, password: PASSWORD },
+  });
+  assert.equal(reset.status, 200, reset.text);
+  assert.equal(reset.cookie, `ayudaSession_${tabs.household}=`);
+  assert.equal(await browser.user(tabs.household), null);
+  assert.equal(await browser.user(tabs.other), null);
+  assert.equal(await browser.user(undefined), null);
+  assert.equal((await browser.user(tabs.admin)).id, admin.id);
+  assert.equal((await browser.user(tabs.official)).id, official.id);
+  assert.equal(app.db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?').get(household.id).count, 0);
+});
+
 test('registration, persisted sessions, secure cookie attributes and logout', async t => {
   const app = await fixture(t);
   assert.deepEqual((await app.request('/api/auth/session')).data, { user: null });
@@ -140,6 +330,208 @@ test('registration, persisted sessions, secure cookie attributes and logout', as
   const logout = await app.request('/api/auth/logout', { method: 'POST', body: {}, cookie: login.cookie });
   assert.equal(logout.status, 200, logout.text);
   assert.deepEqual((await app.request('/api/auth/session', { cookie: login.cookie })).data, { user: null });
+});
+
+test('household requests persist on the server and appear to the same barangay', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'ayuda-request-test-'));
+  const databasePath = join(directory, 'requests.sqlite');
+  const first = await fixture(t, { databasePath });
+
+  const household = await first.register({
+    name: 'Maria Santos',
+    email: 'maria@example.com',
+    role: 'HOUSEHOLD',
+    barangay: 'Lahug',
+    contact: '09171234567',
+  });
+  first.db.prepare("UPDATE users SET profile = json_set(profile, '$.status', 'APPROVED') WHERE id = ?").run(household.id);
+
+  const householdLogin = await first.login('maria@example.com', PASSWORD);
+  const createRequest = await first.request('/api/requests', {
+    method: 'POST',
+    body: {
+      category: 'Food',
+      disaster: 'Flood',
+      urgency: 'Urgent',
+      contact: '09171234567',
+      description: 'We need rice and canned food.',
+      location: 'Lahug, Cebu City',
+      photos: [],
+    },
+    cookie: householdLogin.cookie,
+  });
+  assert.equal(createRequest.status, 201, createRequest.text);
+  assert.match(createRequest.data.request.id, /^REQ-/);
+  assert.equal(createRequest.data.request.householdId, household.id);
+
+  const listRequest = await first.request('/api/requests', { cookie: householdLogin.cookie });
+  assert.equal(listRequest.status, 200, listRequest.text);
+  assert.equal(listRequest.data.requests.length, 1);
+  assert.equal(listRequest.data.requests[0].householdId, household.id);
+
+  const second = await fixture(t, { databasePath });
+  const official = {
+    id: 'OFFICIAL-1',
+    email: 'official@example.com',
+    name: 'Barangay Clerk',
+    role: 'BARANGAY_OFFICIAL',
+    barangay: 'Lahug',
+    contact: '09999999999',
+    status: 'APPROVED',
+    createdAt: new Date(Date.UTC(2026, 8, 22, 11, 0, 0)).toISOString(),
+  };
+  second.db.prepare('INSERT INTO users (id, email, password_hash, profile) VALUES (?, ?, ?, ?)')
+    .run(official.id, official.email, await hashPassword(PASSWORD), JSON.stringify(official));
+  const officialLogin = await second.login('official@example.com', PASSWORD);
+  const sharedList = await second.request('/api/requests', { cookie: officialLogin.cookie });
+  assert.equal(sharedList.status, 200, sharedList.text);
+  assert.equal(sharedList.data.requests.length, 1);
+  assert.equal(sharedList.data.requests[0].barangay, 'Lahug');
+});
+
+test('empty dashboard data starts at zero and requests and donations persist through their workflows', async t => {
+  const app = await fixture(t, { admin: { email: 'admin@example.com', password: PASSWORD, name: 'DSWS Admin' } });
+  const donor = await app.register({ name: 'Community Donor', email: 'donor@example.com', role: 'DONOR' });
+  const otherDonor = await app.register({ name: 'Other Donor', email: 'other-donor@example.com', role: 'DONOR' });
+  const household = await app.register({ name: 'Lahug Household', email: 'household@example.com', role: 'HOUSEHOLD', barangay: 'Lahug' });
+  app.db.prepare("UPDATE users SET profile = json_set(profile, '$.status', 'APPROVED') WHERE id = ?").run(household.id);
+  const official = {
+    id: 'OFFICIAL-LAHUG', email: 'official@example.com', name: 'Lahug Official', role: 'BARANGAY_OFFICIAL',
+    barangay: 'Lahug', contact: '09171234567', status: 'APPROVED', createdAt: new Date().toISOString(),
+  };
+  app.db.prepare('INSERT INTO users (id, email, password_hash, profile) VALUES (?, ?, ?, ?)')
+    .run(official.id, official.email, await hashPassword(PASSWORD), JSON.stringify(official));
+  const otherOfficial = {
+    id: 'OFFICIAL-APAS', email: 'apas-official@example.com', name: 'Apas Official', role: 'BARANGAY_OFFICIAL',
+    barangay: 'Apas', contact: '09171234568', status: 'APPROVED', createdAt: new Date().toISOString(),
+  };
+  app.db.prepare('INSERT INTO users (id, email, password_hash, profile) VALUES (?, ?, ?, ?)')
+    .run(otherOfficial.id, otherOfficial.email, await hashPassword(PASSWORD), JSON.stringify(otherOfficial));
+
+  const donorLogin = await app.login(donor.email);
+  const otherDonorLogin = await app.login(otherDonor.email);
+  const officialLogin = await app.login(official.email);
+  const otherOfficialLogin = await app.login(otherOfficial.email);
+  const householdLogin = await app.login(household.email);
+  const adminLogin = await app.login('admin@example.com');
+  for (const login of [donorLogin, otherDonorLogin, officialLogin, otherOfficialLogin, householdLogin, adminLogin]) {
+    const emptyRequests = await app.request('/api/requests', { cookie: login.cookie });
+    const emptyDonations = await app.request('/api/donations', { cookie: login.cookie });
+    const emptyNotifications = await app.request('/api/notifications', { cookie: login.cookie });
+    assert.deepEqual(emptyRequests.data.requests, []);
+    assert.deepEqual(emptyDonations.data.donations, []);
+    assert.deepEqual(emptyNotifications.data.notifications, []);
+    assert.equal(emptyNotifications.data.unreadCount, 0);
+  }
+
+  const unsupportedDonationType = await app.request('/api/donations', {
+    method: 'POST', cookie: donorLogin.cookie,
+    body: { type: 'Financial', amount: '1000', barangay: 'Lahug' },
+  });
+  assert.equal(unsupportedDonationType.status, 400);
+  const generalDonation = await app.request('/api/donations', {
+    method: 'POST', cookie: donorLogin.cookie,
+    body: { type: 'Medical', amount: 'First-aid kits', barangay: 'Lahug' },
+  });
+  assert.equal(generalDonation.status, 201, generalDonation.text);
+  assert.equal(generalDonation.data.donation.status, 'Pending Approval');
+  const donationId = generalDonation.data.donation.id;
+  const donorSubmittedInbox = await app.request('/api/notifications', { cookie: donorLogin.cookie });
+  assert.equal(donorSubmittedInbox.data.notifications[0].type, 'donation_submitted');
+  const officialDonationInbox = await app.request('/api/notifications', { cookie: officialLogin.cookie });
+  assert.equal(officialDonationInbox.data.notifications[0].type, 'donation_received');
+  const otherOfficialInbox = await app.request('/api/notifications', { cookie: otherOfficialLogin.cookie });
+  assert.deepEqual(otherOfficialInbox.data.notifications, []);
+  const adminDonationInbox = await app.request('/api/notifications', { cookie: adminLogin.cookie });
+  assert.equal(adminDonationInbox.data.notifications[0].targetId, donationId);
+  const emptyChat = await app.request(`/api/donations/${donationId}/messages`, { cookie: donorLogin.cookie });
+  assert.equal(emptyChat.status, 200, emptyChat.text);
+  assert.deepEqual(emptyChat.data.messages, []);
+  const deniedDonorChat = await app.request(`/api/donations/${donationId}/messages`, { cookie: otherDonorLogin.cookie });
+  const deniedOfficialChat = await app.request(`/api/donations/${donationId}/messages`, { cookie: otherOfficialLogin.cookie });
+  assert.equal(deniedDonorChat.status, 404);
+  assert.equal(deniedOfficialChat.status, 404);
+  const emptyMessage = await app.request(`/api/donations/${donationId}/messages`, {
+    method: 'POST', body: { message: '   ' }, cookie: donorLogin.cookie,
+  });
+  assert.equal(emptyMessage.status, 400);
+  const donorMessage = await app.request(`/api/donations/${donationId}/messages`, {
+    method: 'POST', body: { message: 'Can we coordinate delivery to the barangay hall?' }, cookie: donorLogin.cookie,
+  });
+  assert.equal(donorMessage.status, 201, donorMessage.text);
+  const officialThread = await app.request(`/api/donations/${donationId}/messages`, { cookie: officialLogin.cookie });
+  assert.equal(officialThread.data.messages.length, 1);
+  assert.equal(officialThread.data.messages[0].senderName, donor.name);
+  const officialMessage = await app.request(`/api/donations/${donationId}/messages`, {
+    method: 'POST', body: { message: 'Please deliver to the Apas barangay hall.' }, cookie: officialLogin.cookie,
+  });
+  assert.equal(officialMessage.status, 201, officialMessage.text);
+  const donorThread = await app.request(`/api/donations/${donationId}/messages`, { cookie: donorLogin.cookie });
+  assert.equal(donorThread.data.messages.length, 2);
+  assert.equal(donorThread.data.messages[1].senderName, official.name);
+  const donorChatInbox = await app.request('/api/notifications', { cookie: donorLogin.cookie });
+  const chatNotification = donorChatInbox.data.notifications.find(item => item.type === 'donation_message');
+  assert.ok(chatNotification);
+  const deniedNotificationRead = await app.request(`/api/notifications/${chatNotification.id}/read`, {
+    method: 'POST', body: {}, cookie: otherDonorLogin.cookie,
+  });
+  assert.equal(deniedNotificationRead.status, 404);
+  const markChatRead = await app.request(`/api/notifications/${chatNotification.id}/read`, {
+    method: 'POST', body: {}, cookie: donorLogin.cookie,
+  });
+  assert.equal(markChatRead.status, 200, markChatRead.text);
+  const pendingDonations = await app.request('/api/donations', { cookie: officialLogin.cookie });
+  assert.equal(pendingDonations.data.donations.length, 1);
+  assert.equal(pendingDonations.data.donations[0].id, generalDonation.data.donation.id);
+  const approveDonation = await app.request(`/api/donations/${generalDonation.data.donation.id}/approve`, {
+    method: 'POST', body: {}, cookie: officialLogin.cookie,
+  });
+  assert.equal(approveDonation.status, 200, approveDonation.text);
+  assert.equal(approveDonation.data.donation.status, 'Approved');
+  const reviewedThread = await app.request(`/api/donations/${donationId}/messages`, { cookie: officialLogin.cookie });
+  assert.equal(reviewedThread.data.messages.length, 2);
+
+  const createdRequest = await app.request('/api/requests', {
+    method: 'POST', cookie: householdLogin.cookie,
+    body: { category: 'Food', disaster: 'Flood', urgency: 'Urgent', contact: '09171234567', description: 'Food assistance needed.', photos: ['data:image/jpeg;base64,' + 'a'.repeat(20000)] },
+  });
+  assert.equal(createdRequest.status, 201, createdRequest.text);
+  assert.equal(createdRequest.data.request.photos.length, 1);
+  const requestId = createdRequest.data.request.id;
+  const officialRequestInbox = await app.request('/api/notifications', { cookie: officialLogin.cookie });
+  assert.ok(officialRequestInbox.data.notifications.some(item => item.type === 'request_created' && item.targetId === requestId));
+  const pledge = await app.request('/api/donations', {
+    method: 'POST', cookie: donorLogin.cookie,
+    body: { requestId, type: 'Items', amount: 'Food supplies' },
+  });
+  assert.equal(pledge.status, 201, pledge.text);
+  assert.equal(pledge.data.donation.status, 'Reserved');
+
+  const approval = await app.request(`/api/requests/${requestId}/approve`, {
+    method: 'POST', body: {}, cookie: officialLogin.cookie,
+  });
+  assert.equal(approval.status, 200, approval.text);
+  assert.equal(approval.data.request.status, 'Pledged');
+  const householdStatusInbox = await app.request('/api/notifications', { cookie: householdLogin.cookie });
+  assert.ok(householdStatusInbox.data.notifications.some(item => item.title === 'Request approved' && item.targetId === requestId));
+  const fulfilled = await app.request(`/api/requests/${requestId}/fulfill`, {
+    method: 'POST', body: {}, cookie: officialLogin.cookie,
+  });
+  assert.equal(fulfilled.status, 200, fulfilled.text);
+  assert.equal(fulfilled.data.request.status, 'Fulfilled');
+
+  const householdRequests = await app.request('/api/requests', { cookie: householdLogin.cookie });
+  const donorDonations = await app.request('/api/donations', { cookie: donorLogin.cookie });
+  assert.equal(householdRequests.data.requests[0].status, 'Fulfilled');
+  assert.deepEqual(donorDonations.data.donations.map(item => item.status).sort(), ['Approved', 'Completed']);
+  const clearDonorInbox = await app.request('/api/notifications/read-all', {
+    method: 'POST', body: {}, cookie: donorLogin.cookie,
+  });
+  assert.equal(clearDonorInbox.status, 200, clearDonorInbox.text);
+  const clearedDonorInbox = await app.request('/api/notifications', { cookie: donorLogin.cookie });
+  assert.equal(clearedDonorInbox.data.unreadCount, 0);
+  assert.equal(app.db.prepare('SELECT COUNT(*) AS count FROM requests').get().count, 1);
+  assert.equal(app.db.prepare('SELECT COUNT(*) AS count FROM donations').get().count, 2);
 });
 
 test('email recovery hides account existence and replaces password while revoking every session', async t => {
