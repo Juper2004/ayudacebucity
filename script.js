@@ -689,7 +689,7 @@ function formValue(id, trim = true) {
 }
 function validEmail(value) { return value.length <= 254 && /^[^\s@]+@[^\s@]+\.com$/i.test(value); }
 function validPhilippineMobile(value) { return typeof value === "string" && /^(?:09\d{9}|\+639\d{9})$/.test(value); }
-function hasNegativeDonationAmount(value) { return /(?:^|[\s:=(₱$€£])-\s*\d/.test(value); }
+function hasNegativeDonationAmount(value) { return /(?:^|[\s:=(₱$€£])-\s*(?:\d|\.\s*\d)/.test(value); }
 function transactionReference(record) { return record?.referenceCode || record?.id || ""; }
 function requestReference(id) { return transactionReference(getRequests().find(request => request.id === id)); }
 window.handleLogin = e => submitForm(e, "Logging in…", async () => {
@@ -1722,7 +1722,7 @@ window.openPledge = id => {
   <p class="small">Reserved for 48 hours from the time you pledge, including while verification is pending.</p>
   <form class="form-grid" onsubmit="submitPledge(event,${toInlineJsArg(id)})">
     <div class="field"><label for="pledgeType">Donation type</label><select id="pledgeType"><option>Items</option><option>Medical</option><option>Shelter</option><option>Other</option></select></div>
-    <div class="field"><label for="pledgeAmount">Donation details / amount</label><input id="pledgeAmount" required maxlength="2000" placeholder="e.g. 10 food packs or 5 first-aid kits"></div>
+    <div class="field"><label for="pledgeAmount">Donation details</label><input id="pledgeAmount" required maxlength="2000" placeholder="e.g. 10 food packs or 5 first-aid kits"></div>
     <button class="btn btn-primary">Confirm pledge</button>
   </form>`);
 };
@@ -1762,17 +1762,35 @@ window.submitPledge = async (e, id) => {
     toast(r.status === "Under Verification" ? "Pledge reserved for 48 hours while awaiting barangay verification." : "Pledge reserved for 48 hours.");
     render();
 };
-window.openGeneralDonation = () => {
+window.openGeneralDonation = async () => {
     if (!currentActor("DONOR")) {
         toast("An approved donor account is required.");
+        return;
+    }
+    let eligibleBarangays;
+    try {
+        const data = await api("/api/donations/eligible-barangays");
+        if (!Array.isArray(data.barangays) || data.barangays.some(barangay => !BARANGAYS.includes(barangay))) {
+            throw new Error("The server returned invalid barangay availability.");
+        }
+        eligibleBarangays = data.barangays;
+    }
+    catch (error) {
+        toast(error.message);
+        return;
+    }
+    if (!currentActor("DONOR")) return;
+    if (!eligibleBarangays.length) {
+        showModal(`<div class="modal-head"><h2>General donations unavailable</h2><button class="icon-btn" aria-label="Close dialog" onclick="closeModal()">${svg("close")}</button></div>
+  <p>No barangay currently has an approved official account to review general donations. Please check again later.</p>`);
         return;
     }
     showModal(`<div class="modal-head"><h2>Make a general donation</h2><button class="icon-btn" aria-label="Close dialog" onclick="closeModal()">${svg("close")}</button></div>
   <p>Support AYUDA CEBU even when no household request is available. Select the barangay that should receive the donation for review and approval.</p>
   <form class="form-grid" onsubmit="submitGeneralDonation(event)">
     <div class="field"><label for="generalDonationType">Donation type</label><select id="generalDonationType"><option>Items</option><option>Water</option><option>Food</option><option>Medical</option><option>Shelter</option><option>Other</option></select></div>
-    <div class="field"><label for="generalDonationBarangay">Barangay</label><select id="generalDonationBarangay" required><option value="">Select barangay</option>${barangayOptions()}</select></div>
-    <div class="field"><label for="generalDonationAmount">Donation details / amount</label><input id="generalDonationAmount" required maxlength="2000" placeholder="e.g. 20 water containers or 5 first-aid kits"></div>
+    <div class="field"><label for="generalDonationBarangay">Barangay</label><select id="generalDonationBarangay" required><option value="">Select barangay</option>${eligibleBarangays.map(barangay => `<option>${escapeHtml(barangay)}</option>`).join("")}</select></div>
+    <div class="field"><label for="generalDonationAmount">Donation details</label><input id="generalDonationAmount" required maxlength="2000" placeholder="e.g. 20 water containers or 5 first-aid kits"></div>
     <button class="btn btn-primary">Confirm donation</button>
   </form>`);
 };

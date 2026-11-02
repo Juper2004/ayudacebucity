@@ -636,11 +636,29 @@ test('empty dashboard data starts at zero and requests and donations persist thr
     body: { type: 'Financial', amount: '1000', barangay: 'Lahug' },
   });
   assert.equal(unsupportedDonationType.status, 400);
+  const eligibleDonationBarangays = await app.request('/api/donations/eligible-barangays', { cookie: donorLogin.cookie });
+  assert.equal(eligibleDonationBarangays.status, 200, eligibleDonationBarangays.text);
+  assert.deepEqual(eligibleDonationBarangays.data.barangays, ['Apas', 'Lahug']);
+  const unstaffedGeneralDonation = await app.request('/api/donations', {
+    method: 'POST', cookie: donorLogin.cookie,
+    body: { type: 'Food', amount: '10 food packs', barangay: 'Mabolo' },
+  });
+  assert.equal(unstaffedGeneralDonation.status, 409);
   const negativeGeneralDonation = await app.request('/api/donations', {
     method: 'POST', cookie: donorLogin.cookie,
     body: { type: 'Food', amount: '-5 food packs', barangay: 'Lahug' },
   });
   assert.equal(negativeGeneralDonation.status, 400);
+  const negativeDecimalGeneralDonation = await app.request('/api/donations', {
+    method: 'POST', cookie: donorLogin.cookie,
+    body: { type: 'Food', amount: '-.5 food packs', barangay: 'Lahug' },
+  });
+  assert.equal(negativeDecimalGeneralDonation.status, 400);
+  const spacedNegativeDecimalGeneralDonation = await app.request('/api/donations', {
+    method: 'POST', cookie: donorLogin.cookie,
+    body: { type: 'Food', amount: '- .5 food packs', barangay: 'Lahug' },
+  });
+  assert.equal(spacedNegativeDecimalGeneralDonation.status, 400);
   const generalDonation = await app.request('/api/donations', {
     method: 'POST', cookie: donorLogin.cookie,
     body: { type: 'Medical', amount: 'First-aid kits', barangay: 'Lahug' },

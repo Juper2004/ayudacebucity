@@ -13,7 +13,7 @@ const MAX_RESIDENCY_PROOF_BYTES = 2 * 1024 * 1024;
 const RESIDENCY_PROOF_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']);
 const RESET_MESSAGE = 'If an account exists for this email, a verification code will be sent. Check your inbox and spam folder.';
 const INVALID_CODE = 'That verification code is invalid or expired. Request a new code if needed.';
-const NEGATIVE_DONATION_AMOUNT = /(?:^|[\s:=(₱$€£])-\s*\d/;
+const NEGATIVE_DONATION_AMOUNT = /(?:^|[\s:=(₱$€£])-\s*(?:\d|\.\s*\d)/;
 
 async function createApp(options = {}) {
   const db = openDatabase(options.databasePath || ':memory:');
@@ -634,6 +634,13 @@ async function createApp(options = {}) {
     res.status(201).json({ message: record, request: normalizeRequest(request) });
   });
 
+  app.get('/api/donations/eligible-barangays', signedIn, (req, res) => {
+    const actor = req.actor;
+    if (actor.role !== 'DONOR' || actor.status !== 'APPROVED') return fail(res, 403, 'Only approved donors can view barangays accepting general donations.');
+    const staffedBarangays = new Set(db.prepare("SELECT DISTINCT json_extract(profile, '$.barangay') AS barangay FROM users WHERE json_extract(profile, '$.role') = 'BARANGAY_OFFICIAL' AND json_extract(profile, '$.status') = 'APPROVED'").all().map(row => row.barangay));
+    res.json({ barangays: barangays.filter(barangay => staffedBarangays.has(barangay)) });
+  });
+
   app.get('/api/donations', signedIn, (req, res) => {
     expireServerPledges();
     const actor = req.actor;
@@ -667,6 +674,8 @@ async function createApp(options = {}) {
       if (existing) return fail(res, 409, 'You already have an active pledge for this request.');
     } else if (!barangays.includes(requestedBarangay)) {
       return fail(res, 400, 'Select a valid barangay for the donation review.');
+    } else if (!db.prepare("SELECT 1 FROM users WHERE json_extract(profile, '$.role') = 'BARANGAY_OFFICIAL' AND json_extract(profile, '$.status') = 'APPROVED' AND json_extract(profile, '$.barangay') = ? LIMIT 1").get(requestedBarangay)) {
+      return fail(res, 409, 'General donations are not available for this barangay until an approved barangay official account is available.');
     }
     const timestamp = new Date(now()).toISOString();
     const donation = {

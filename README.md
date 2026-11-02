@@ -18,7 +18,7 @@ A mobile-first relief coordination prototype for Cebu City's 80 barangays, with 
 - Household relief requests
 - Barangay request approval/rejection
 - Donor request-specific pledges
-- General donations routed to a selected barangay
+- General donations routed to a selected barangay with an approved official account
 - Private, donation-specific chat between donors and approved officials for household pledges and general donations
 - Request-specific chat between households and their barangay after relief request approval
 - Role-scoped dashboard notifications for request, donation, and chat updates
