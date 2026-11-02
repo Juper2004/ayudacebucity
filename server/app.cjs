@@ -4,12 +4,16 @@ const path = require('node:path');
 const { randomBytes, randomInt, randomUUID } = require('node:crypto');
 const { openDatabase } = require('./database.cjs');
 const { createGeocoder, GeocodingError, validCoordinates } = require('./geocoding.cjs');
-const { hashPassword, verifyPassword, digest, codeDigest, equalDigest, validEmail, validPassword } = require('./security.cjs');
+const { hashPassword, verifyPassword, digest, codeDigest, equalDigest, validEmail, validPhilippineMobile, validPassword } = require('./security.cjs');
+const { nextReferenceCode, referenceDate } = require('./transaction-references.cjs');
 const barangays = require('./barangays.json');
 
 const MINUTE = 60000;
+const MAX_RESIDENCY_PROOF_BYTES = 2 * 1024 * 1024;
+const RESIDENCY_PROOF_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']);
 const RESET_MESSAGE = 'If an account exists for this email, a verification code will be sent. Check your inbox and spam folder.';
 const INVALID_CODE = 'That verification code is invalid or expired. Request a new code if needed.';
+const NEGATIVE_DONATION_AMOUNT = /(?:^|[\s:=(₱$€£])-\s*\d/;
 
 async function createApp(options = {}) {
   const db = openDatabase(options.databasePath || ':memory:');
@@ -63,6 +67,18 @@ async function createApp(options = {}) {
       actor.role === 'BARANGAY_OFFICIAL' && account.role === 'HOUSEHOLD' && account.barangay === actor.barangay
     );
   }
+  function parseResidencyProof(dataUrl) {
+    if (typeof dataUrl !== 'string') return null;
+    const match = /^data:(application\/pdf|image\/jpeg|image\/png|image\/webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);
+    if (!match || match[2].length % 4 !== 0) return null;
+    const content = Buffer.from(match[2], 'base64');
+    if (!content.length || content.length > MAX_RESIDENCY_PROOF_BYTES || content.toString('base64') !== match[2]) return null;
+    const validSignature = match[1] === 'application/pdf' ? content.subarray(0, 5).toString() === '%PDF-'
+      : match[1] === 'image/jpeg' ? content[0] === 0xff && content[1] === 0xd8 && content[2] === 0xff
+      : match[1] === 'image/png' ? content.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+      : content.subarray(0, 4).toString() === 'RIFF' && content.subarray(8, 12).toString() === 'WEBP';
+    return validSignature ? { mimeType: match[1], content } : null;
+  }
   function notifyUser(userId, notification) {
     if (!userId) return;
     db.prepare('INSERT INTO notifications (id, user_id, type, title, body, target_type, target_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
@@ -88,20 +104,40 @@ async function createApp(options = {}) {
     if (!['HOUSEHOLD', 'DONOR', 'BARANGAY_OFFICIAL'].includes(role)) return { error: 'Select a valid account role.' };
     if (!name || name.length > 160 || !validEmail(email)) return { error: 'Enter a valid name and email address.' };
     if (!validPassword(body.password)) return { error: 'Use a password with 8 to 128 characters.' };
-    if (role !== 'DONOR' && (!barangays.includes(barangay) || !contact || contact.length > 60)) return { error: 'Enter a valid barangay and contact number.' };
-    return { user: {
+    if (role !== 'DONOR' && !barangays.includes(barangay)) return { error: 'Enter a valid barangay.' };
+    if (role !== 'DONOR' && !validPhilippineMobile(contact)) return { error: 'Enter a Philippine mobile number in 09XXXXXXXXX or +639XXXXXXXXX format.' };
+    const residencyProof = role === 'HOUSEHOLD' ? parseResidencyProof(body.residencyProof) : null;
+    if (role === 'HOUSEHOLD' && !residencyProof) return { error: 'Upload a valid residency document (PDF, JPG, PNG, or WebP, up to 2 MB).' };
+    const user = {
       id: 'ACC-' + randomUUID(), name, email, role,
       barangay: role === 'DONOR' ? null : barangay,
       contact: role === 'DONOR' ? null : contact,
       status: role === 'DONOR' || forcedRole ? 'APPROVED' : 'PENDING',
       createdAt: new Date(now()).toISOString()
-    } };
+    };
+    if (residencyProof) user.residencyProofSubmitted = true;
+    return { user, residencyProof };
   }
-  async function insertAccount(user, password) {
+  async function insertAccount(user, password, residencyProof = null) {
     const hash = await hashPassword(password);
     // Recheck after the asynchronous hash to handle simultaneous registrations.
     if (userByEmail(user.email)) return false;
-    db.prepare('INSERT INTO users (id, email, password_hash, profile) VALUES (?, ?, ?, ?)').run(user.id, user.email, hash, JSON.stringify(user));
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      if (userByEmail(user.email)) {
+        db.exec('ROLLBACK');
+        return false;
+      }
+      db.prepare('INSERT INTO users (id, email, password_hash, profile) VALUES (?, ?, ?, ?)').run(user.id, user.email, hash, JSON.stringify(user));
+      if (residencyProof) {
+        db.prepare('INSERT INTO residency_documents (user_id, mime_type, content, uploaded_at) VALUES (?, ?, ?, ?)')
+          .run(user.id, residencyProof.mimeType, residencyProof.content, new Date(now()).toISOString());
+      }
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
     return true;
   }
 
@@ -141,7 +177,11 @@ async function createApp(options = {}) {
     req.sessionHash = token ? digest(token) : null;
     if (req.sessionHash) {
       const record = db.prepare('SELECT user_id FROM sessions WHERE token_hash = ? AND expires_at > ?').get(req.sessionHash, now());
-      req.actor = record ? publicUser(record.user_id) : null;
+      const actor = record ? publicUser(record.user_id) : null;
+      if (actor?.role === 'HOUSEHOLD' && actor.status === 'REJECTED') {
+        db.prepare('DELETE FROM sessions WHERE user_id = ?').run(actor.id);
+        req.actor = null;
+      } else req.actor = actor;
     }
     next();
   });
@@ -169,7 +209,7 @@ async function createApp(options = {}) {
     if (wait) return limit(res, wait);
     const input = accountInput(req.body);
     if (input.error) return fail(res, 400, input.error);
-    if (!await insertAccount(input.user, req.body.password)) return fail(res, 409, 'An account with this email already exists.');
+    if (!await insertAccount(input.user, req.body.password, input.residencyProof)) return fail(res, 409, 'An account with this email already exists.');
     res.status(201).json({ user: input.user, message: input.user.status === 'PENDING' ? 'Account created. Your account is waiting for approval.' : 'Account created. You can now log in.' });
   });
   app.post('/api/auth/login', async (req, res) => {
@@ -182,7 +222,8 @@ async function createApp(options = {}) {
     const verified = await verifyPassword(password, row?.password_hash || dummyPassword);
     if (!row || !verified || userByEmail(email)?.password_hash !== row.password_hash) return fail(res, 401, 'Invalid email or password.');
     const user = publicUser(row.id);
-    if (user.role !== 'HOUSEHOLD' && user.status !== 'APPROVED') return fail(res, 403, user.status === 'REJECTED' ? 'Your account was not approved. Contact DSWS for assistance.' : 'Your account is waiting for approval.');
+    if (user.status === 'REJECTED') return fail(res, 403, 'Your account was rejected and is deactivated. Contact an administrator for assistance.');
+    if (user.role !== 'HOUSEHOLD' && user.status !== 'APPROVED') return fail(res, 403, 'Your account is waiting for approval.');
     const token = randomBytes(32).toString('hex');
     const duration = 8 * 60 * MINUTE;
     if (req.sessionHash) db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(req.sessionHash);
@@ -297,6 +338,7 @@ async function createApp(options = {}) {
     if (!row) return null;
     return {
       id: row.id,
+      referenceCode: row.reference_code || row.id,
       householdId: row.household_id,
       household: row.household,
       barangay: row.barangay,
@@ -330,6 +372,7 @@ async function createApp(options = {}) {
     if (!row) return null;
     return {
       id: row.id,
+      referenceCode: row.reference_code || row.id,
       donorId: row.donor_id,
       requestId: row.request_id,
       donor: row.donor,
@@ -381,7 +424,7 @@ async function createApp(options = {}) {
     if (!['Food', 'Water', 'Medical', 'Shelter', 'Utility'].includes(category)) return { error: 'Select a valid assistance category.' };
     if (!['Typhoon', 'Flood', 'Fire', 'Landslide', 'Earthquake', 'Other'].includes(disaster)) return { error: 'Select a valid incident type.' };
     if (!['Low', 'Medium', 'Urgent'].includes(urgency)) return { error: 'Select a valid urgency.' };
-    if (!contact || contact.length > 60 || !description || description.length > 2000) return { error: 'Enter a valid contact number and description.' };
+    if (!validPhilippineMobile(contact) || !description || description.length > 2000) return { error: 'Enter a Philippine mobile number in 09XXXXXXXXX or +639XXXXXXXXX format and a valid description.' };
     if (location.length > 500) return { error: 'Keep the location to 500 characters or fewer.' };
     if (photos.length > 3 || photos.some(value => typeof value !== 'string' || !/^data:image\/(?:jpeg|png|webp);base64,/.test(value) || value.length > 1400000)) return { error: 'Attach up to 3 images, each under 1 MB.' };
     const createdAt = new Date(now()).toISOString();
@@ -431,26 +474,35 @@ async function createApp(options = {}) {
     const input = requestInput(req.body, actor);
     if (input.error) return fail(res, 400, input.error);
     const request = input.request;
-    db.prepare('INSERT INTO requests (id, household_id, household, barangay, contact, category, disaster, urgency, description, status, location, gps, gps_accuracy, gps_captured_at, photos, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(
-        request.id,
-        request.householdId,
-        request.household,
-        request.barangay,
-        request.contact,
-        request.category,
-        request.disaster,
-        request.urgency,
-        request.description,
-        request.status,
-        request.location,
-        request.gps,
-        request.gpsAccuracy,
-        request.gpsCapturedAt,
-        JSON.stringify(request.photos),
-        request.createdAt,
-        request.updatedAt
-      );
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      request.referenceCode = nextReferenceCode(db, 'requests', 'REQ', referenceDate(request.createdAt));
+      db.prepare('INSERT INTO requests (id, reference_code, household_id, household, barangay, contact, category, disaster, urgency, description, status, location, gps, gps_accuracy, gps_captured_at, photos, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(
+          request.id,
+          request.referenceCode,
+          request.householdId,
+          request.household,
+          request.barangay,
+          request.contact,
+          request.category,
+          request.disaster,
+          request.urgency,
+          request.description,
+          request.status,
+          request.location,
+          request.gps,
+          request.gpsAccuracy,
+          request.gpsCapturedAt,
+          JSON.stringify(request.photos),
+          request.createdAt,
+          request.updatedAt
+        );
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
     const requestNotification = {
       type: 'request_created', title: 'New household request',
       body: `${request.household} submitted a ${request.category.toLowerCase()} request in ${request.barangay}.`,
@@ -605,7 +657,7 @@ async function createApp(options = {}) {
     const amount = typeof req.body.amount === 'string' ? req.body.amount.trim() : '';
     const requestId = typeof req.body.requestId === 'string' && req.body.requestId ? req.body.requestId : null;
     const requestedBarangay = typeof req.body.barangay === 'string' ? req.body.barangay : '';
-    if (!['Items', 'Water', 'Food', 'Medical', 'Shelter', 'Other'].includes(type) || !amount || amount.length > 2000) return fail(res, 400, 'Select a valid donation type and enter details of up to 2,000 characters.');
+    if (!['Items', 'Water', 'Food', 'Medical', 'Shelter', 'Other'].includes(type) || !amount || amount.length > 2000 || NEGATIVE_DONATION_AMOUNT.test(amount)) return fail(res, 400, 'Select a valid donation type and enter non-negative details of up to 2,000 characters.');
     let request = null;
     if (requestId) {
       expireServerPledges();
@@ -625,8 +677,9 @@ async function createApp(options = {}) {
     };
     db.exec('BEGIN IMMEDIATE');
     try {
-      db.prepare('INSERT INTO donations (id, donor_id, request_id, donor, barangay, type, amount, status, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(donation.id, donation.donorId, donation.requestId, donation.donor, donation.barangay, donation.type, donation.amount, donation.status, donation.createdAt, donation.expiresAt);
+      donation.referenceCode = nextReferenceCode(db, 'donations', 'DON', referenceDate(timestamp));
+      db.prepare('INSERT INTO donations (id, reference_code, donor_id, request_id, donor, barangay, type, amount, status, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(donation.id, donation.referenceCode, donation.donorId, donation.requestId, donation.donor, donation.barangay, donation.type, donation.amount, donation.status, donation.createdAt, donation.expiresAt);
       if (requestId && request.status === 'Approved') {
         db.prepare("UPDATE requests SET status = 'Pledged', pledged_at = ?, pledged_by = ?, updated_at = ? WHERE id = ? AND status = 'Approved'")
           .run(timestamp, actor.name, timestamp, requestId);
@@ -744,6 +797,36 @@ async function createApp(options = {}) {
     } else users = [actor];
     res.json({ users });
   });
+  app.get('/api/accounts/:id/residency-proof', signedIn, (req, res) => {
+    const user = publicUser(req.params.id);
+    if (!canReview(req.actor, user) || user.status !== 'PENDING') return fail(res, 403, 'You cannot view this residency document.');
+    const document = db.prepare('SELECT mime_type, content FROM residency_documents WHERE user_id = ?').get(user.id);
+    if (!document || !RESIDENCY_PROOF_TYPES.has(document.mime_type)) return fail(res, 404, 'Residency proof is not available.');
+    res.set('Cache-Control', 'no-store').json({
+      mimeType: document.mime_type,
+      data: Buffer.from(document.content).toString('base64'),
+    });
+  });
+  app.post('/api/accounts/:id/residency-proof', signedIn, (req, res) => {
+    const user = publicUser(req.params.id);
+    if (!user || req.actor.id !== user.id || user.role !== 'HOUSEHOLD' || user.status !== 'PENDING') {
+      return fail(res, 403, 'Only the pending household account can upload its residency document.');
+    }
+    const document = parseResidencyProof(req.body.residencyProof);
+    if (!document) return fail(res, 400, 'Upload a valid residency document (PDF, JPG, PNG, or WebP, up to 2 MB).');
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      db.prepare('INSERT OR REPLACE INTO residency_documents (user_id, mime_type, content, uploaded_at) VALUES (?, ?, ?, ?)')
+        .run(user.id, document.mimeType, document.content, new Date(now()).toISOString());
+      user.residencyProofSubmitted = true;
+      db.prepare('UPDATE users SET profile = ? WHERE id = ?').run(JSON.stringify(user), user.id);
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+    res.status(200).json({ user });
+  });
   app.post('/api/accounts/officials', signedIn, async (req, res) => {
     if (req.actor.role !== 'DSWS_ADMIN' || req.actor.status !== 'APPROVED') return fail(res, 403, 'Only DSWS administrators can create official accounts.');
     const wait = rate('official-create:' + req.actor.id, 30, 60 * MINUTE);
@@ -771,14 +854,19 @@ async function createApp(options = {}) {
         user.reviewedAt = new Date(now()).toISOString();
         user.reviewedBy = req.actor.email;
       }
+      if (user.role === 'HOUSEHOLD') {
+        db.prepare('DELETE FROM residency_documents WHERE user_id = ?').run(user.id);
+        user.residencyProofSubmitted = false;
+      }
       db.prepare('UPDATE users SET profile = ? WHERE id = ?').run(JSON.stringify(user), user.id);
+      if (action === 'reject') db.prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id);
       res.json({ user });
     });
   }
   app.use('/api', (req, res) => fail(res, 404, 'API endpoint not found.'));
 
   // Serve only public application assets, never the project directory or secrets.
-  const assets = ['index.html', 'script.js', 'report-pdf.js', 'report-worker.js', 'styles.css', 'auth.css', 'auth-cebu-waterfront.png', 'banner.png', 'cebu-skyline.png', 'final-icon.png', 'main-logo-circle.png', 'hero.png'];
+  const assets = ['index.html', 'script.js', 'report-pdf.js', 'report-worker.js', 'styles.css', 'auth.css', 'auth-cebu-waterfront.png', 'banner.png', 'cebu-skyline.png', 'final-icon.png', 'main-logo-circle.png', 'hero-ayuda.png'];
   app.get('/', (req, res) => res.sendFile(path.join(root, 'index.html')));
   for (const asset of assets) app.get('/' + asset, (req, res) => res.sendFile(path.join(root, asset)));
   app.get('/vendor/jspdf.umd.min.js', (req, res) => res.sendFile(path.join(root, 'node_modules/jspdf/dist/jspdf.umd.min.js')));

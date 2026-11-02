@@ -6,11 +6,58 @@ const { basename, dirname, join, resolve } = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
 const test = require('node:test');
 const { createApp } = require('../server/app.cjs');
-const { hashPassword } = require('../server/security.cjs');
+const { openDatabase } = require('../server/database.cjs');
+const { hashPassword, validPhilippineMobile } = require('../server/security.cjs');
 
 const PASSWORD = 'Testing-password-938!';
 const NEW_PASSWORD = 'Changed-password-174!';
 const ORIGIN = 'http://127.0.0.1:3000';
+const TEST_PNG_DATA_URL = 'data:image/png;base64,iVBORw0KGgo=';
+
+test('legacy transactions are backfilled with stable date-based references', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'ayuda-reference-test-'));
+  const databasePath = join(directory, 'test.sqlite');
+  let db = null;
+  t.after(async () => {
+    if (db) {
+      db.close();
+      db = null;
+    }
+    const cleanupTarget = resolve(directory);
+    assert.equal(dirname(cleanupTarget), resolve(tmpdir()), 'cleanup remains inside the temporary directory');
+    assert.ok(basename(cleanupTarget).startsWith('ayuda-reference-test-'));
+    await rm(cleanupTarget, { recursive: true, force: true });
+  });
+
+  db = openDatabase(databasePath);
+  db.prepare('INSERT INTO users (id, email, password_hash, profile) VALUES (?, ?, ?, ?)')
+    .run('legacy-user', 'legacy@example.com', 'unused', '{}');
+  const insertRequest = db.prepare(`INSERT INTO requests
+    (id, household_id, household, barangay, category, disaster, urgency, description, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  insertRequest.run('legacy-request-1', 'legacy-user', 'Legacy Household', 'Lahug', 'Food', 'Flood', 'Medium', 'Need food.', 'Under Verification', '2026-09-22T10:00:00.000Z', '2026-09-22T10:00:00.000Z');
+  insertRequest.run('legacy-request-2', 'legacy-user', 'Legacy Household', 'Lahug', 'Food', 'Flood', 'Medium', 'Need water.', 'Under Verification', '2026-09-22T11:00:00.000Z', '2026-09-22T11:00:00.000Z');
+  db.prepare(`INSERT INTO donations (id, donor_id, donor, barangay, type, amount, status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run('legacy-donation-1', 'legacy-user', 'Legacy Donor', 'Lahug', 'Food', '10 packs', 'Approved', '2026-09-22T10:00:00.000Z');
+  db.close();
+  db = null;
+
+  db = openDatabase(databasePath);
+  assert.deepEqual(
+    db.prepare('SELECT reference_code FROM requests ORDER BY id').all().map(row => row.reference_code).sort(),
+    ['REQ-20260922-001', 'REQ-20260922-002'],
+  );
+  assert.equal(db.prepare('SELECT reference_code FROM donations').get().reference_code, 'DON-20260922-001');
+  const savedReferences = db.prepare('SELECT reference_code FROM requests ORDER BY id').all().map(row => row.reference_code);
+  db.close();
+  db = null;
+
+  db = openDatabase(databasePath);
+  assert.deepEqual(db.prepare('SELECT reference_code FROM requests ORDER BY id').all().map(row => row.reference_code), savedReferences);
+  db.close();
+  db = null;
+});
 
 function assertPublicUser(user) {
   assert.ok(user && user.id && user.email, 'a public user has an id and email');
@@ -76,6 +123,7 @@ async function fixture(t, options = {}) {
       name: 'Test Resident', email: 'resident@example.com', password: PASSWORD,
       role: 'DONOR', barangay: 'Guadalupe', contact: '09171234567', ...overrides,
     };
+    if (body.role === 'HOUSEHOLD' && !body.residencyProof) body.residencyProof = TEST_PNG_DATA_URL;
     const response = await request('/api/auth/register', { method: 'POST', body });
     assert.equal(response.status, 201, response.text);
     assertPublicUser(response.data.user);
@@ -332,6 +380,149 @@ test('registration, persisted sessions, secure cookie attributes and logout', as
   assert.deepEqual((await app.request('/api/auth/session', { cookie: login.cookie })).data, { user: null });
 });
 
+test('registration rejects email addresses that do not end in .com', async t => {
+  const app = await fixture(t);
+  const response = await app.request('/api/auth/register', {
+    method: 'POST',
+    body: {
+      name: 'Test Resident',
+      email: 'resident@example.ocm',
+      password: PASSWORD,
+      role: 'DONOR',
+      barangay: 'Guadalupe',
+      contact: '09171234567',
+    },
+  });
+  assert.equal(response.status, 400, response.text);
+});
+
+test('Philippine mobile validation accepts local and international forms only', () => {
+  assert.equal(validPhilippineMobile('09633842609'), true);
+  assert.equal(validPhilippineMobile('+639633842609'), true);
+  assert.equal(validPhilippineMobile('0917123456'), false);
+  assert.equal(validPhilippineMobile('091712345678'), false);
+  assert.equal(validPhilippineMobile('+14155552671'), false);
+  assert.equal(validPhilippineMobile('09 633 842 609'), false);
+});
+
+test('household registration rejects non-Philippine mobile numbers and accepts +63 format', async t => {
+  const app = await fixture(t);
+  const invalid = await app.request('/api/auth/register', {
+    method: 'POST',
+    body: {
+      name: 'Test Resident',
+      email: 'invalid-contact@example.com',
+      password: PASSWORD,
+      role: 'HOUSEHOLD',
+      barangay: 'Guadalupe',
+      contact: '+14155552671',
+    },
+  });
+  assert.equal(invalid.status, 400, invalid.text);
+
+  const valid = await app.register({
+    name: 'Test Resident',
+    email: 'valid-contact@example.com',
+    role: 'HOUSEHOLD',
+    barangay: 'Guadalupe',
+    contact: '+639633842609',
+  });
+  assert.equal(valid.contact, '+639633842609');
+});
+
+test('household registration requires a supported residence document', async t => {
+  const app = await fixture(t);
+  const body = {
+    name: 'Test Resident',
+    email: 'missing-proof@example.com',
+    password: PASSWORD,
+    role: 'HOUSEHOLD',
+    barangay: 'Guadalupe',
+    contact: '09633842609',
+  };
+  const missing = await app.request('/api/auth/register', { method: 'POST', body });
+  assert.equal(missing.status, 400, missing.text);
+  const invalid = await app.request('/api/auth/register', {
+    method: 'POST',
+    body: { ...body, email: 'invalid-proof@example.com', residencyProof: 'data:image/svg+xml;base64,PHN2Zz4=' },
+  });
+  assert.equal(invalid.status, 400, invalid.text);
+  const invalidSignature = await app.request('/api/auth/register', {
+    method: 'POST',
+    body: { ...body, email: 'invalid-signature@example.com', residencyProof: 'data:image/png;base64,ZmFrZQ==' },
+  });
+  assert.equal(invalidSignature.status, 400, invalidSignature.text);
+});
+
+test('residency proof is private to reviewers in the household barangay and deleted after approval', async t => {
+  const app = await fixture(t);
+  const household = await app.register({
+    email: 'proof-household@example.com', role: 'HOUSEHOLD', barangay: 'Guadalupe',
+  });
+  const official = await app.register({
+    email: 'proof-official@example.com', role: 'BARANGAY_OFFICIAL', barangay: 'Guadalupe',
+  });
+  const otherOfficial = await app.register({
+    email: 'other-proof-official@example.com', role: 'BARANGAY_OFFICIAL', barangay: 'Lahug',
+  });
+  app.db.prepare("UPDATE users SET profile = json_set(profile, '$.status', 'APPROVED') WHERE id IN (?, ?)")
+    .run(official.id, otherOfficial.id);
+  const householdLogin = await app.login(household.email);
+  const officialLogin = await app.login(official.email);
+  const otherOfficialLogin = await app.login(otherOfficial.email);
+  const donor = await app.register({ email: 'proof-donor@example.com' });
+  const donorLogin = await app.login(donor.email);
+  const proofPath = `/api/accounts/${encodeURIComponent(household.id)}/residency-proof`;
+
+  app.db.prepare('DELETE FROM residency_documents WHERE user_id = ?').run(household.id);
+  app.db.prepare("UPDATE users SET profile = json_set(profile, '$.residencyProofSubmitted', false) WHERE id = ?").run(household.id);
+  const uploadedAgain = await app.request(proofPath, {
+    method: 'POST', body: { residencyProof: TEST_PNG_DATA_URL }, cookie: householdLogin.cookie,
+  });
+  assert.equal(uploadedAgain.status, 200, uploadedAgain.text);
+  assert.equal(uploadedAgain.data.user.residencyProofSubmitted, true);
+  const invalidUpload = await app.request(proofPath, {
+    method: 'POST', body: { residencyProof: 'data:image/png;base64,ZmFrZQ==' }, cookie: householdLogin.cookie,
+  });
+  assert.equal(invalidUpload.status, 400, invalidUpload.text);
+  const otherHousehold = await app.register({
+    email: 'other-proof-household@example.com', role: 'HOUSEHOLD', barangay: 'Guadalupe',
+  });
+  const otherHouseholdLogin = await app.login(otherHousehold.email);
+  const forbiddenUpload = await app.request(proofPath, {
+    method: 'POST', body: { residencyProof: TEST_PNG_DATA_URL }, cookie: otherHouseholdLogin.cookie,
+  });
+  assert.equal(forbiddenUpload.status, 403, forbiddenUpload.text);
+
+  const authorized = await app.request(proofPath, { cookie: officialLogin.cookie });
+  assert.equal(authorized.status, 200, authorized.text);
+  assert.equal(authorized.data.mimeType, 'image/png');
+  assert.equal(authorized.data.data, TEST_PNG_DATA_URL.split(',')[1]);
+  assert.equal((await app.request(proofPath, { cookie: otherOfficialLogin.cookie })).status, 403);
+  assert.equal((await app.request(proofPath, { cookie: donorLogin.cookie })).status, 403);
+  assert.equal((await app.request(proofPath, { cookie: householdLogin.cookie })).status, 403);
+  const listedAccounts = await app.request('/api/accounts', { cookie: officialLogin.cookie });
+  assert.ok(!listedAccounts.text.includes(TEST_PNG_DATA_URL.split(',')[1]));
+
+  const approved = await app.request(`/api/accounts/${encodeURIComponent(household.id)}/approve`, {
+    method: 'POST', body: {}, cookie: officialLogin.cookie,
+  });
+  assert.equal(approved.status, 200, approved.text);
+  assert.equal(approved.data.user.residencyProofSubmitted, false);
+  assert.equal(app.db.prepare('SELECT COUNT(*) AS count FROM residency_documents WHERE user_id = ?').get(household.id).count, 0);
+  assert.equal((await app.request(proofPath, { cookie: officialLogin.cookie })).status, 403);
+
+  const rejectedHousehold = await app.register({
+    email: 'rejected-proof-household@example.com', role: 'HOUSEHOLD', barangay: 'Guadalupe',
+  });
+  const rejected = await app.request(`/api/accounts/${encodeURIComponent(rejectedHousehold.id)}/reject`, {
+    method: 'POST', body: { reason: 'Please provide a clearer proof of address.' }, cookie: officialLogin.cookie,
+  });
+  assert.equal(rejected.status, 200, rejected.text);
+  assert.equal(rejected.data.user.residencyProofSubmitted, false);
+  assert.equal(app.db.prepare('SELECT COUNT(*) AS count FROM residency_documents WHERE user_id = ?').get(rejectedHousehold.id).count, 0);
+});
+
 test('household requests persist on the server and appear to the same barangay', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'ayuda-request-test-'));
   const databasePath = join(directory, 'requests.sqlite');
@@ -347,6 +538,20 @@ test('household requests persist on the server and appear to the same barangay',
   first.db.prepare("UPDATE users SET profile = json_set(profile, '$.status', 'APPROVED') WHERE id = ?").run(household.id);
 
   const householdLogin = await first.login('maria@example.com', PASSWORD);
+  const invalidContactRequest = await first.request('/api/requests', {
+    method: 'POST',
+    body: {
+      category: 'Food',
+      disaster: 'Flood',
+      urgency: 'Urgent',
+      contact: '+14155552671',
+      description: 'We need rice and canned food.',
+      location: 'Lahug, Cebu City',
+      photos: [],
+    },
+    cookie: householdLogin.cookie,
+  });
+  assert.equal(invalidContactRequest.status, 400, invalidContactRequest.text);
   const createRequest = await first.request('/api/requests', {
     method: 'POST',
     body: {
@@ -362,12 +567,14 @@ test('household requests persist on the server and appear to the same barangay',
   });
   assert.equal(createRequest.status, 201, createRequest.text);
   assert.match(createRequest.data.request.id, /^REQ-/);
+  assert.equal(createRequest.data.request.referenceCode, 'REQ-20260922-001');
   assert.equal(createRequest.data.request.householdId, household.id);
 
   const listRequest = await first.request('/api/requests', { cookie: householdLogin.cookie });
   assert.equal(listRequest.status, 200, listRequest.text);
   assert.equal(listRequest.data.requests.length, 1);
   assert.equal(listRequest.data.requests[0].householdId, household.id);
+  assert.equal(listRequest.data.requests[0].referenceCode, createRequest.data.request.referenceCode);
 
   const second = await fixture(t, { databasePath });
   const official = {
@@ -429,12 +636,18 @@ test('empty dashboard data starts at zero and requests and donations persist thr
     body: { type: 'Financial', amount: '1000', barangay: 'Lahug' },
   });
   assert.equal(unsupportedDonationType.status, 400);
+  const negativeGeneralDonation = await app.request('/api/donations', {
+    method: 'POST', cookie: donorLogin.cookie,
+    body: { type: 'Food', amount: '-5 food packs', barangay: 'Lahug' },
+  });
+  assert.equal(negativeGeneralDonation.status, 400);
   const generalDonation = await app.request('/api/donations', {
     method: 'POST', cookie: donorLogin.cookie,
     body: { type: 'Medical', amount: 'First-aid kits', barangay: 'Lahug' },
   });
   assert.equal(generalDonation.status, 201, generalDonation.text);
   assert.equal(generalDonation.data.donation.status, 'Pending Approval');
+  assert.equal(generalDonation.data.donation.referenceCode, 'DON-20260922-001');
   const donationId = generalDonation.data.donation.id;
   const donorSubmittedInbox = await app.request('/api/notifications', { cookie: donorLogin.cookie });
   assert.equal(donorSubmittedInbox.data.notifications[0].type, 'donation_submitted');
@@ -483,6 +696,7 @@ test('empty dashboard data starts at zero and requests and donations persist thr
   const pendingDonations = await app.request('/api/donations', { cookie: officialLogin.cookie });
   assert.equal(pendingDonations.data.donations.length, 1);
   assert.equal(pendingDonations.data.donations[0].id, generalDonation.data.donation.id);
+  assert.equal(pendingDonations.data.donations[0].referenceCode, generalDonation.data.donation.referenceCode);
   const approveDonation = await app.request(`/api/donations/${generalDonation.data.donation.id}/approve`, {
     method: 'POST', body: {}, cookie: officialLogin.cookie,
   });
@@ -497,6 +711,7 @@ test('empty dashboard data starts at zero and requests and donations persist thr
   });
   assert.equal(createdRequest.status, 201, createdRequest.text);
   assert.equal(createdRequest.data.request.photos.length, 1);
+  assert.equal(createdRequest.data.request.referenceCode, 'REQ-20260922-001');
   const requestId = createdRequest.data.request.id;
   const officialRequestInbox = await app.request('/api/notifications', { cookie: officialLogin.cookie });
   assert.ok(officialRequestInbox.data.notifications.some(item => item.type === 'request_created' && item.targetId === requestId));
@@ -506,6 +721,7 @@ test('empty dashboard data starts at zero and requests and donations persist thr
   });
   assert.equal(pledge.status, 201, pledge.text);
   assert.equal(pledge.data.donation.status, 'Reserved');
+  assert.equal(pledge.data.donation.referenceCode, 'DON-20260922-002');
 
   const approval = await app.request(`/api/requests/${requestId}/approve`, {
     method: 'POST', body: {}, cookie: officialLogin.cookie,
@@ -724,6 +940,7 @@ test('account approval is scoped to administrators and the official\'s own baran
   const local = await app.register({ email: 'local@example.com', role: 'HOUSEHOLD' });
   const other = await app.register({ email: 'other@example.com', role: 'HOUSEHOLD', barangay: 'Lahug' });
   const adminLogin = await app.login(admin.email);
+  const otherLogin = await app.login(other.email);
   const approved = await app.request(`/api/accounts/${encodeURIComponent(official.id)}/approve`, {
     method: 'POST', body: {}, cookie: adminLogin.cookie,
   });
@@ -746,6 +963,17 @@ test('account approval is scoped to administrators and the official\'s own baran
   assert.equal(localApproved.status, 200, localApproved.text);
   const localLogin = await app.login(local.email);
   assert.equal(localLogin.data.user.status, 'APPROVED');
+  const barangayRejected = await app.register({ email: 'barangay-rejected@example.com', role: 'HOUSEHOLD' });
+  const barangayRejectedLogin = await app.login(barangayRejected.email);
+  const rejectByOfficial = await app.request(`/api/accounts/${encodeURIComponent(barangayRejected.id)}/reject`, {
+    method: 'POST', cookie: officialLogin.cookie, body: { reason: 'Please verify your barangay details.' },
+  });
+  assert.equal(rejectByOfficial.status, 200, rejectByOfficial.text);
+  assert.deepEqual((await app.request('/api/auth/session', { cookie: barangayRejectedLogin.cookie })).data, { user: null });
+  const barangayRejectedLoginAttempt = await app.request('/api/auth/login', {
+    method: 'POST', body: { email: barangayRejected.email, password: PASSWORD },
+  });
+  assert.equal(barangayRejectedLoginAttempt.status, 403, barangayRejectedLoginAttempt.text);
   const createOfficial = await app.request('/api/accounts/officials', {
     method: 'POST', cookie: officialLogin.cookie,
     body: { name: 'Unauthorized Official', email: 'unauthorized@example.com', password: PASSWORD, barangay: 'Lahug', contact: '09171234567' },
@@ -766,8 +994,15 @@ test('account approval is scoped to administrators and the official\'s own baran
     method: 'POST', cookie: adminLogin.cookie, body: { reason: 'Please provide your complete household information.' },
   });
   assert.equal(adminReject.status, 200, adminReject.text);
-  const rejectedLogin = await app.login(other.email);
-  assert.equal(rejectedLogin.data.user.status, 'REJECTED');
+  assert.equal(adminReject.data.user.status, 'REJECTED');
+  const rejectedSession = await app.request('/api/auth/session', { cookie: otherLogin.cookie });
+  assert.deepEqual(rejectedSession.data, { user: null });
+  const rejectedRequest = await app.request('/api/accounts', { cookie: otherLogin.cookie });
+  assert.equal(rejectedRequest.status, 401, rejectedRequest.text);
+  const rejectedLogin = await app.request('/api/auth/login', {
+    method: 'POST', body: { email: other.email, password: PASSWORD },
+  });
+  assert.equal(rejectedLogin.status, 403, rejectedLogin.text);
 });
 
 test('JSON and origin checks reject cross-site mutations and malformed requests', async t => {

@@ -14,6 +14,7 @@ A mobile-first relief coordination prototype for Cebu City's 80 barangays, with 
 ## Included workflows
 
 - Household registration and barangay account verification
+- Household residency-proof upload with private, barangay-scoped review
 - Household relief requests
 - Barangay request approval/rejection
 - Donor request-specific pledges
@@ -25,6 +26,10 @@ A mobile-first relief coordination prototype for Cebu City's 80 barangays, with 
 - 72-hour request escalation indicators
 - 48-hour pledge reservations
 - DSWS citywide reporting and PDF summary export
+
+Household registration requires a barangay certificate/ID or another address document (PDF, JPG, PNG, or WebP, up to 2 MB). If a pending household account has no saved document, its owner can upload one later from **Profile**. Only an approved official assigned to the selected barangay or an approved DSWS administrator can view the proof. The document is deleted from the application database after the account is approved or rejected.
+
+Requests and donations display short references such as `REQ-20260922-001` and `DON-20260922-001`. The date and daily sequence use Philippine time. These are display references; internal IDs remain unchanged for database relationships and API actions.
 
 ## Household relief conversations
 
@@ -50,19 +55,11 @@ Select **View requests** to review the individual households, descriptions, and 
 
 ## Household location
 
-In **Household > New Request**, tap **Use precise location** once while at the household and allow the browser's location request. AYUDA requests fresh, high-accuracy readings, reacquires location automatically, and waits up to one minute for a device-reported accuracy of **10 metres or better**. Only a qualifying reading is added to the form and used for address lookup. A rough reading such as 271 metres is never saved as an automatic pin, including when the attempt times out or is cancelled. Old or invalid readings are ignored.
+In **Household > New Request**, you may enter an address, landmark, or `latitude, longitude` manually, or leave the location blank. The precise-location button has been removed. Manually entered coordinates can be viewed on a map from request details.
 
-The 10-metre threshold filters the device's estimated accuracy; it does not guarantee an exact household entrance. [Browser high-accuracy mode](https://developer.mozilla.org/en-US/docs/Web/API/Geolocation/getCurrentPosition) is a request to the device, and [reported accuracy is an estimate](https://developer.mozilla.org/en-US/docs/Web/API/GeolocationCoordinates/accuracy). A Windows laptop or desktop may be unable to reach this threshold. In that case, use a phone with precise location enabled or enter the household address manually. Changing a website cannot give a computer GPS hardware or override location permissions.
+Address lookup for existing map pins uses the authenticated `POST /api/location/reverse` endpoint and OpenStreetMap Nominatim provider. Set optional `GEOCODING_REVERSE_URL` to use a Nominatim-compatible provider and `GEOCODING_USER_AGENT` to identify your deployment.
 
-An accepted pin is ready to submit immediately, even if address lookup fails. Its coordinates, accuracy, and capture time are retained in the saved request, and its details include a map link. Starting another capture removes the previous automatic pin and address; editing the address also removes the previous pin to avoid mismatched coordinates. Manually entered text is preserved while a new capture is pending. You can enter an address, landmark, or `latitude, longitude` manually, or leave location blank. Manual coordinates are not labelled as device-verified. Cancel stops detection; an already accepted pin is kept. Temporary location errors retry automatically within the same minute, while denied permission stops immediately.
-
-Browser location requires **HTTPS**, or **http://localhost:3000** on the computer running AYUDA. An HTTP LAN address on another device does not provide a secure location context. Enable location services on the device and allow location for the site in browser settings if access was blocked.
-
-Address lookup uses the authenticated `POST /api/location/reverse` endpoint, so it works with the app's same-origin security policy. The server uses the existing OpenStreetMap Nominatim provider, a seven-second timeout, a bounded in-memory cache, and a shared request limit of at most one provider request every 1.1 seconds. If busy or unavailable, the pin remains usable. Coordinates go to the provider for address lookup; household names, contact details, and request descriptions are not sent.
-
-The public provider is intended for light, user-triggered use. Follow the [Nominatim usage policy](https://operations.osmfoundation.org/policies/nominatim/), including its application-wide one-request-per-second limit and OpenStreetMap attribution. Set optional `GEOCODING_REVERSE_URL` to switch to a Nominatim-compatible provider and `GEOCODING_USER_AGENT` to identify your deployment. Multiple server processes or larger deployments need a shared limiter/cache or an appropriate hosted/self-hosted provider. No API key is needed for the default provider.
-
-Run `npm test` for the backend checks. On Windows with Chrome installed, `node output/location-browser-check.cjs` runs isolated browser checks for capture, permissions, fallback, cancellation, navigation, submission, and mobile layout. It uses synthetic locations and an in-memory account database.
+Run `npm test` for the backend checks. On Windows with Chrome installed, `node output/location-browser-check.cjs` runs isolated browser checks for location and request behavior using synthetic coordinates and an in-memory account database.
 
 ## PDF summary format
 
@@ -259,3 +256,96 @@ npm test
 ```
 
 If you want a clean reset, delete the database file at `data/ayuda.sqlite` and restart the server. This removes existing user accounts and sessions, so use it only when you intentionally want a fresh local setup.
+
+
+
+## Remove all Records
+
+$backupPath = Join-Path (Resolve-Path .\data).Path "ayuda-backup-$(Get-Date -Format yyyyMMdd-HHmmss-fff).sqlite"
+$env:AYUDA_BACKUP_PATH = $backupPath
+
+try {
+@'
+'use strict';
+
+const fs = require('node:fs');
+const path = require('node:path');
+const { DatabaseSync } = require('node:sqlite');
+
+const dbPath = path.resolve(process.env.DATABASE_PATH || './data/ayuda.sqlite');
+const backupPath = path.resolve(process.env.AYUDA_BACKUP_PATH || '');
+if (!fs.existsSync(dbPath)) throw new Error(`Database not found: ${dbPath}`);
+if (!process.env.AYUDA_BACKUP_PATH) throw new Error('Backup path was not provided.');
+
+const db = new DatabaseSync(dbPath);
+const quote = name => `"${name.replaceAll('"', '""')}"`;
+
+try {
+  db.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000');
+
+  const adminCount = db.prepare(
+    "SELECT COUNT(*) AS count FROM users WHERE json_extract(profile, '$.role') = 'DSWS_ADMIN' AND json_extract(profile, '$.status') = 'APPROVED'"
+  ).get().count;
+  if (adminCount < 1) throw new Error('No approved DSWS admin found; nothing changed.');
+
+  db.prepare('VACUUM INTO ?').run(backupPath);
+
+  const backup = new DatabaseSync(backupPath, { readOnly: true });
+  try {
+    if (backup.prepare('PRAGMA integrity_check').get().integrity_check !== 'ok')
+      throw new Error('Backup integrity check failed; nothing changed.');
+  } finally {
+    backup.close();
+  }
+
+  const tables = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+  ).all().map(row => row.name);
+  if (!tables.includes('users')) throw new Error('Users table not found; nothing changed.');
+
+  const foreignKeys = new Map(tables.map(name => [
+    name,
+    db.prepare(`PRAGMA foreign_key_list(${quote(name)})`).all().map(row => row.table)
+  ]));
+  const remaining = new Set(tables.filter(name => name !== 'users'));
+  const deleteOrder = [];
+  while (remaining.size) {
+    const leaf = [...remaining].find(candidate =>
+      ![...remaining].some(child =>
+        child !== candidate && foreignKeys.get(child).includes(candidate)
+      )
+    );
+    if (!leaf) throw new Error('Cyclic table references found; nothing changed.');
+    deleteOrder.push(leaf);
+    remaining.delete(leaf);
+  }
+
+  console.log(`Database: ${dbPath}`);
+  console.log(`Approved DSWS admin accounts to preserve: ${adminCount}`);
+  console.log(`Tables to clear: ${deleteOrder.join(', ')}`);
+
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const table of deleteOrder) db.exec(`DELETE FROM ${quote(table)}`);
+    db.prepare(
+      "DELETE FROM users WHERE COALESCE(json_extract(profile, '$.role'), '') <> 'DSWS_ADMIN'"
+    ).run();
+
+    const violations = db.prepare('PRAGMA foreign_key_check').all();
+    if (violations.length) throw new Error('Foreign-key check failed; changes rolled back.');
+    db.exec('COMMIT');
+    console.log('Reset complete. DSWS admin account(s) were preserved.');
+    console.log(`Database backup: ${backupPath}`);
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+} finally {
+  db.close();
+}
+'@ | node --env-file-if-exists=.env -
+
+if ($LASTEXITCODE -ne 0) { throw 'Database reset failed; see the Node error above.' }
+} finally {
+  Remove-Item Env:AYUDA_BACKUP_PATH -ErrorAction SilentlyContinue
+}

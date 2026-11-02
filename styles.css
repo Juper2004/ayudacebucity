@@ -2972,6 +2972,11 @@ tbody tr:hover{background:#F8FBFF}
 .dashboard .avatar{width:54px;height:54px;background:linear-gradient(135deg,#344869,#101e36);font-size:.9rem}
 .dashboard .icon-btn{width:54px;height:54px;border-radius:15px;border:1px solid #d5e3fb;background:#fff;color:#163a71;box-shadow:0 8px 25px rgba(26,86,167,.07)}
 .dashboard .sidebar{background:rgba(255,255,255,.91);border-right-color:#e4eefa}
+.dashboard.dsws-dashboard .sidebar,.dashboard.barangay-dashboard .sidebar{border-right-color:#dce9f8;box-shadow:none;scrollbar-width:thin;scrollbar-color:#9bb9dc transparent}
+.dashboard.dsws-dashboard .sidebar::-webkit-scrollbar,.dashboard.barangay-dashboard .sidebar::-webkit-scrollbar{width:10px}
+.dashboard.dsws-dashboard .sidebar::-webkit-scrollbar-track,.dashboard.barangay-dashboard .sidebar::-webkit-scrollbar-track{background:transparent}
+.dashboard.dsws-dashboard .sidebar::-webkit-scrollbar-thumb,.dashboard.barangay-dashboard .sidebar::-webkit-scrollbar-thumb{border:3px solid transparent;border-radius:999px;background:#9bb9dc;background-clip:content-box}
+.dashboard.dsws-dashboard .sidebar::-webkit-scrollbar-thumb:hover,.dashboard.barangay-dashboard .sidebar::-webkit-scrollbar-thumb:hover{background:#628bbd;background-clip:content-box}
 .dashboard .sidebar-branding{padding:20px 14px 25px}
 .dashboard .sidebar-eyebrow{font-size:.68rem;color:#526582;letter-spacing:.16em}
 .dashboard .sidebar-branding strong{font-size:1.06rem;color:#182744;margin-top:10px}
@@ -3248,18 +3253,8 @@ tbody tr:hover{background:#F8FBFF}
 .dashboard .field input[type="file"]{padding:10px;font-size:.8rem}
 .dashboard .field input[type="file"]::file-selector-button{margin-right:10px;padding:8px 11px;border:1px solid #d4e3f6;border-radius:8px;background:#eaf3ff;color:#1357a8;font:inherit;font-weight:650;cursor:pointer}
 
-/* Household location capture and saved request pins. */
-.request-location [hidden]{display:none!important}
+/* Optional household address entry and saved legacy request pins. */
 .request-location .location-optional{font-weight:500;color:#617792}
-.request-location .location-controls{grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:12px}
-.request-location .location-controls .btn{min-height:49px;white-space:nowrap}
-.request-location .location-controls .btn[aria-busy="true"]{opacity:.75;cursor:wait}
-.request-location .location-feedback{display:flex;align-items:baseline;gap:12px}
-.request-location .location-status{flex:1;min-width:0;margin:8px 0 0;color:#486587;font-size:.76rem;line-height:1.6;overflow-wrap:anywhere}
-.request-location .location-status:empty{margin:0}
-.request-location .location-status[data-tone="warning"]{color:#895716}
-.request-location .location-status[data-tone="success"]{color:#236848}
-.request-location .location-text-button{flex-shrink:0;min-height:44px;padding:5px 8px;border:0;background:transparent;color:#075fc5;font:inherit;font-size:.76rem;font-weight:700;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
 .location-result{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding:15px 17px;border:1px solid #d4e3f6;border-radius:12px;background:#f4f8ff;color:#334969;min-width:0}
 .location-result .location-pin-copy{display:grid;gap:4px;min-width:0}
 .location-result .location-pin-copy>strong{font-size:.76rem;font-weight:750}
@@ -3269,12 +3264,12 @@ tbody tr:hover{background:#F8FBFF}
 .location-result .location-map-link:hover{background:#e8f2ff;border-color:#8cbbf0}
 .location-result .location-attribution{flex-basis:100%;margin:0;padding-top:9px;border-top:1px solid #dce8f7;color:#617792;font-size:.65rem;line-height:1.5}
 .location-result .location-attribution a{color:#42648c;text-decoration:underline;text-underline-offset:2px}
-.location-result a:focus-visible,.request-location .location-text-button:focus-visible{outline:3px solid #7fbbff;outline-offset:3px}
+.location-result a:focus-visible{outline:3px solid #7fbbff;outline-offset:3px}
 @media(max-width:600px){
-  .request-location .location-controls{grid-template-columns:minmax(0,1fr);gap:9px}
   .location-result{align-items:flex-start;padding:13px;gap:10px}
   .location-result .location-map-link{width:100%}
 }
+
 @media(min-width:980px) and (max-width:1260px){
   .dsws-metrics-five{grid-template-columns:repeat(3,minmax(0,1fr))}
   .donor-browse-grid{grid-template-columns:minmax(0,1fr)}

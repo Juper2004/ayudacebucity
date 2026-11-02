@@ -498,7 +498,7 @@ function landing() {
         <div class="container landing-hero-grid">
           <div class="landing-hero-copy">
             <div class="landing-eyebrow">Tabang. Paglaum. Panaghiusa.</div>
-            <h1 id="landing-title">Together, <span>help reaches</span> further.</h1>
+            <h1 id="landing-title">Sa <span>panaghiusa, maabot</span> tanan.</h1>
             <p>A clearer way to request, verify, and support relief across Cebu City.</p>
             <div class="landing-actions">
               <a class="btn btn-primary" href="#/register?role=household">Request assistance ${svg("arrow")}</a>
@@ -527,7 +527,7 @@ function landing() {
                 <span class="landing-preview-copy"><span class="landing-preview-label">Step 03</span><strong>Support matched</strong></span>
               </li>
             </ol>
-            <img src="hero.png" alt="Illustration of a Cebu City family receiving relief supplies from a volunteer, with a city skyline behind them" width="1730" height="909" fetchpriority="high">
+            <img src="hero-ayuda.png" alt="A Cebu City volunteer wearing an AYUDA CEBU CITY vest delivers relief supplies to a family" width="1730" height="909" fetchpriority="high">
           </div>
         </div>
       </section>
@@ -687,7 +687,11 @@ function formValue(id, trim = true) {
     const value = document.getElementById(id)?.value || "";
     return trim ? value.trim() : value;
 }
-function validEmail(value) { return value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value); }
+function validEmail(value) { return value.length <= 254 && /^[^\s@]+@[^\s@]+\.com$/i.test(value); }
+function validPhilippineMobile(value) { return typeof value === "string" && /^(?:09\d{9}|\+639\d{9})$/.test(value); }
+function hasNegativeDonationAmount(value) { return /(?:^|[\s:=(₱$€£])-\s*\d/.test(value); }
+function transactionReference(record) { return record?.referenceCode || record?.id || ""; }
+function requestReference(id) { return transactionReference(getRequests().find(request => request.id === id)); }
 window.handleLogin = e => submitForm(e, "Logging in…", async () => {
     const email = formValue("loginEmail").toLowerCase();
     const password = formValue("loginPassword", false);
@@ -829,7 +833,7 @@ function registerPage() {
     <div class="kicker">Create account</div>
     <h1>Join AYUDA CEBU</h1>
     <p>Create an account to request or support relief in Cebu City.</p>
-    <div class="auth-notice"><span class="auth-notice-icon" aria-hidden="true">i</span><p>Household accounts require barangay approval.<br>Official accounts require DSWS approval.</p></div>
+    <div class="auth-notice"><span class="auth-notice-icon" aria-hidden="true">i</span><p>Household accounts require barangay approval and proof of residence.<br>Official accounts require DSWS approval.</p></div>
     <form class="form-grid" onsubmit="handleRegister(event)">
       <div class="field">
         <label for="regRole">Account type</label>
@@ -847,7 +851,12 @@ function registerPage() {
       </div>
       <div id="regContactWrap" class="field ${["household", "barangay"].includes(pre) ? "" : "hidden"}">
         <label for="regContact">Contact number</label>
-        <input id="regContact" type="tel" autocomplete="tel" placeholder="09XX XXX XXXX">
+        <input id="regContact" type="tel" autocomplete="tel" placeholder="09XXXXXXXXX">
+      </div>
+      <div id="regResidencyProofWrap" class="field ${pre === "household" ? "" : "hidden"}">
+        <label for="regResidencyProof">Proof of residence</label>
+        <input id="regResidencyProof" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" ${pre === "household" ? "required" : ""}>
+        <div class="helper">Upload a barangay certificate/ID or another document showing your address (PDF, JPG, PNG, or WebP; up to 2 MB). Only authorized reviewers can view it. The file is deleted after the review decision.</div>
       </div>
       <div class="field"><label for="regEmail">Email address</label><input id="regEmail" name="email" type="email" autocomplete="email" required placeholder="name@example.com"></div>
       <div class="field"><label for="regPassword">Password</label><div class="password-wrap"><input id="regPassword" name="password" type="password" autocomplete="new-password" minlength="8" required placeholder="At least 8 characters">${passwordToggleMarkup("regPassword")}</div></div>
@@ -861,7 +870,24 @@ window.toggleReg = () => {
     const needsBarangayDetails = ["HOUSEHOLD", "BARANGAY_OFFICIAL"].includes(role);
     document.getElementById("regBarangayWrap")?.classList.toggle("hidden", !needsBarangayDetails);
     document.getElementById("regContactWrap")?.classList.toggle("hidden", !needsBarangayDetails);
+    const proofWrap = document.getElementById("regResidencyProofWrap");
+    const proofInput = document.getElementById("regResidencyProof");
+    proofWrap?.classList.toggle("hidden", role !== "HOUSEHOLD");
+    if (proofInput) proofInput.required = role === "HOUSEHOLD";
 };
+function readResidencyProof(file) {
+    const allowedTypes = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
+    if (!allowedTypes.includes(file.type)) throw new Error("Upload a PDF, JPG, PNG, or WebP residency document.");
+    if (!file.size || file.size > 2 * 1024 * 1024) throw new Error("Residency documents must be no larger than 2 MB.");
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => typeof reader.result === "string"
+            ? resolve(reader.result)
+            : reject(new Error("Could not read the residency document."));
+        reader.onerror = () => reject(new Error("Could not read the residency document."));
+        reader.readAsDataURL(file);
+    });
+}
 window.handleRegister = e => submitForm(e, "Creating account…", async () => {
     const role = formValue("regRole"), name = formValue("regName"), email = formValue("regEmail").toLowerCase();
     const password = formValue("regPassword", false), barangay = formValue("regBarangay"), contact = formValue("regContact");
@@ -877,9 +903,18 @@ window.handleRegister = e => submitForm(e, "Creating account…", async () => {
         toast("Select your barangay.");
         return;
     }
-    if (["HOUSEHOLD", "BARANGAY_OFFICIAL"].includes(role) && (!contact || contact.length > 60)) {
-        toast("Enter your contact number.");
+    if (["HOUSEHOLD", "BARANGAY_OFFICIAL"].includes(role) && !validPhilippineMobile(contact)) {
+        toast("Enter a Philippine mobile number in 09XXXXXXXXX or +639XXXXXXXXX format.");
         return;
+    }
+    let residencyProof;
+    if (role === "HOUSEHOLD") {
+        const file = document.getElementById("regResidencyProof")?.files?.[0];
+        if (!file) {
+            toast("Upload proof of residence to create a household account.");
+            return;
+        }
+        residencyProof = await readResidencyProof(file);
     }
     await api("/api/auth/register", {
         email,
@@ -887,7 +922,8 @@ window.handleRegister = e => submitForm(e, "Creating account…", async () => {
         role,
         name,
         barangay: ["HOUSEHOLD", "BARANGAY_OFFICIAL"].includes(role) ? barangay : null,
-        contact: ["HOUSEHOLD", "BARANGAY_OFFICIAL"].includes(role) ? contact : null
+        contact: ["HOUSEHOLD", "BARANGAY_OFFICIAL"].includes(role) ? contact : null,
+        ...(residencyProof ? { residencyProof } : {})
     });
     e.target.reset();
     toast(["HOUSEHOLD", "BARANGAY_OFFICIAL"].includes(role)
@@ -936,7 +972,7 @@ function dashShell(role, active, content) {
     if (!s || !cfg) return "";
     const dashboardRoutes = { HOUSEHOLD: "household", BARANGAY_OFFICIAL: "barangay", DONOR: "donor", DSWS_ADMIN: "dsws" };
     const dashboardHome = `#/${dashboardRoutes[role]}`;
-    return `<div class="dashboard ${role === "DSWS_ADMIN" ? "dsws-dashboard" : ""} ${role === "DSWS_ADMIN" && active === "overview" ? "dsws-home" : ""}">
+    return `<div class="dashboard ${role === "DSWS_ADMIN" ? "dsws-dashboard" : ""} ${role === "BARANGAY_OFFICIAL" ? "barangay-dashboard" : ""} ${role === "DSWS_ADMIN" && active === "overview" ? "dsws-home" : ""}">
     <header class="dash-top">
       <div class="container dash-top-inner">
         ${brand(dashboardHome)}
@@ -1039,7 +1075,7 @@ function requestList(list, opts = {}) {
     return `<div class="list">${list.map(r => `
     <div class="request-card">
       <div class="request-top">
-        <div><strong>${escapeHtml(r.disaster || r.category)} Assistance</strong><div class="small muted" style="margin-top:3px">${escapeHtml(r.id)} • ${escapeHtml(opts.owner ? r.barangay : r.household + " • " + r.barangay)}</div></div>
+        <div><strong>${escapeHtml(r.disaster || r.category)} Assistance</strong><div class="small muted" style="margin-top:3px">${escapeHtml(transactionReference(r))} • ${escapeHtml(opts.owner ? r.barangay : r.household + " • " + r.barangay)}</div></div>
         ${badge(r.status)}
       </div>
       <p>${escapeHtml(r.description)}</p>
@@ -1058,7 +1094,7 @@ function accountStatusPanel(user) {
     if (user.status === "REJECTED") {
         return `<div class="alert warning"><strong>Account verification rejected.</strong> ${user.rejectionReason ? `Reason: ${escapeHtml(user.rejectionReason)}` : "Contact your barangay office for assistance."}</div>`;
     }
-    return `<div class="alert info"><strong>Account verification pending.</strong> Your household account is waiting for approval from ${escapeHtml(user.barangay)}. You can log in and view your profile, but you cannot submit a relief request yet.</div>`;
+    return `<div class="alert info"><strong>Account verification pending.</strong> Your household account is waiting for approval from ${escapeHtml(user.barangay)}. You can log in and view your profile, but you cannot submit a relief request yet.${user.residencyProofSubmitted ? "" : " Upload your proof of residence from the Profile tab so the barangay can review your account."}</div>`;
 }
 function accountVerificationGate(user) {
     return `<div class="dsws-overview">${dswsPageHeading("Account verification", user.status === "REJECTED" ? "Account needs attention" : "Approval pending", user.status === "REJECTED" ? "Your barangay did not approve the account." : `Your household account must be approved by ${user.barangay} before you can submit a relief request.`)}
@@ -1129,7 +1165,7 @@ function requestForm() {
       <div class="field"><label for="reqBarangay">Barangay</label><input id="reqBarangay" value="${escapeHtml(s.barangay)}" readonly></div>
     </div>
     <div class="form-row">
-      <div class="field"><label for="reqContact">Contact number</label><input id="reqContact" required value="${escapeHtml(s.contact || "")}" placeholder="09XX XXX XXXX"></div>
+      <div class="field"><label for="reqContact">Contact number</label><input id="reqContact" type="tel" autocomplete="tel" required value="${escapeHtml(s.contact || "")}" placeholder="09XXXXXXXXX"></div>
       <div class="field"><label for="reqCategory">Assistance category</label><select id="reqCategory" required><option value="">Select category</option>${categoryOptions()}</select></div>
     </div>
     <div class="form-row">
@@ -1139,18 +1175,12 @@ function requestForm() {
     <div class="field"><label for="reqDescription">Description</label><textarea id="reqDescription" required placeholder="Describe what assistance your household needs."></textarea></div>
     <div class="field"><label for="reqPhotos">Photos</label><input id="reqPhotos" type="file" accept="image/*" multiple required><div class="helper">Attach 1 to 3 photos. Images are compressed before saving.</div></div>
     <div class="field request-location"><label for="reqLocation">Household location <span class="location-optional">(optional)</span></label>
-      <div class="form-row location-controls"><input id="reqLocation" maxlength="500" placeholder="Address, landmark, or latitude, longitude" aria-describedby="reqLocationHelp reqLocationStatus" oninput="onRequestLocationInput(this)"><button id="reqLocationButton" class="btn btn-light" type="button" onclick="captureGps()">Use precise location</button></div>
-      <div id="reqLocationHelp" class="helper">Tap once while at the household. We keep trying for an estimated accuracy of 10 metres or better, for up to a minute. Allow precise location if your device offers it.</div>
-      <div class="location-feedback"><p id="reqLocationStatus" class="location-status" role="status" aria-live="polite" aria-atomic="true"></p><button id="reqLocationCancel" class="location-text-button" type="button" onclick="cancelGps()" hidden>Cancel</button></div>
-      <div id="reqLocationResult" class="location-result" hidden></div>
+      <input id="reqLocation" maxlength="500" placeholder="Address, landmark, or latitude, longitude" aria-describedby="reqLocationHelp">
+      <div id="reqLocationHelp" class="helper">Enter an address or landmark to help the barangay locate your household. You can leave this blank.</div>
     </div>
     <button class="btn btn-primary" type="submit">Submit for verification</button>
   </form></div></section></div>`;
 }
-const GPS_TARGET_ACCURACY_METERS = 10;
-const GPS_CAPTURE_DEADLINE_MS = 60000;
-const GPS_REACQUIRE_MS = 15000;
-let locationCapture = null;
 function parseGpsCoordinates(value) {
     if (typeof value !== "string" || !/^\s*[+-]?\d+(?:\.\d+)?\s*,\s*[+-]?\d+(?:\.\d+)?\s*$/.test(value)) return null;
     const [latitude, longitude] = value.split(",").map(Number);
@@ -1170,176 +1200,6 @@ function gpsSummary(point, accuracy) {
       <a class="location-map-link" href="${gpsMapUrl(point)}" target="_blank" rel="noopener noreferrer" aria-label="View pin on map (opens in a new tab)">View pin on map <span aria-hidden="true">↗</span></a>
       <p class="location-attribution">Map / address data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a></p>`;
 }
-function setLocationStatus(field, message, tone = "") {
-    const status = field.form?.querySelector("#reqLocationStatus");
-    if (status) { status.textContent = message; status.dataset.tone = tone; }
-}
-function updateLocationResult(field) {
-    const result = field.form?.querySelector("#reqLocationResult");
-    if (!result) return;
-    const point = parseGpsCoordinates(field.dataset.coordinates);
-    result.hidden = !point;
-    result.innerHTML = point ? gpsSummary(point, field.dataset.accuracy === undefined ? null : Number(field.dataset.accuracy)) : "";
-}
-function setLocationBusy(field, busy, label = "Finding precise location…") {
-    const button = field.form?.querySelector("#reqLocationButton"), cancel = field.form?.querySelector("#reqLocationCancel");
-    if (button) {
-        button.disabled = busy;
-        button.textContent = busy ? label : "Use precise location";
-        button.setAttribute("aria-busy", String(busy));
-    }
-    if (cancel) cancel.hidden = !busy;
-}
-function stopLocationWatch(capture) {
-    clearTimeout(capture.timer);
-    clearTimeout(capture.retryTimer);
-    capture.generation++;
-    if (capture.watchId !== null) navigator.geolocation?.clearWatch(capture.watchId);
-    capture.watchId = null;
-}
-function cancelLocationCapture() {
-    const capture = locationCapture;
-    if (!capture) return;
-    locationCapture = null;
-    stopLocationWatch(capture);
-    capture.controller?.abort();
-    setLocationBusy(capture.field, false);
-}
-window.cancelGps = () => {
-    const field = locationCapture?.field;
-    cancelLocationCapture();
-    if (field?.isConnected) {
-        setLocationStatus(field, field.dataset.coordinates ? "Stopped. The displayed pin has been kept; check it before submitting." : "Location detection cancelled. You can enter an address or try again.");
-        field.form?.querySelector("#reqLocationButton")?.focus();
-    }
-};
-window.onRequestLocationInput = field => {
-    const hadPin = Boolean(field.dataset.coordinates);
-    if (locationCapture?.field === field) cancelLocationCapture();
-    delete field.dataset.coordinates;
-    delete field.dataset.accuracy;
-    delete field.dataset.capturedAt;
-    const point = parseGpsCoordinates(field.value);
-    if (point) field.dataset.coordinates = gpsCoordinates(point);
-    updateLocationResult(field);
-    setLocationStatus(field, point ? "Coordinates entered. Check the pin before submitting." : hadPin ? "Address edited; the previous pin was removed. Use precise location to add a new pin." : "");
-};
-window.captureGps = () => {
-    const field = document.getElementById("reqLocation");
-    if (!field || locationCapture) return;
-    if (!window.isSecureContext) {
-        setLocationStatus(field, "Location needs a secure connection. Open AYUDA over HTTPS, or use localhost on this computer. You can still enter an address.", "warning");
-        return;
-    }
-    if (!navigator.geolocation) {
-        setLocationStatus(field, "This browser does not support location. Enter an address or use a browser with location access.", "warning");
-        return;
-    }
-    // A new attempt must not silently submit a pin from an earlier location.
-    if (field.dataset.accuracy !== undefined) field.value = "";
-    delete field.dataset.coordinates;
-    delete field.dataset.accuracy;
-    delete field.dataset.capturedAt;
-    const manualPoint = parseGpsCoordinates(field.value);
-    if (manualPoint) field.dataset.coordinates = gpsCoordinates(manualPoint);
-    updateLocationResult(field);
-    const capture = { field, watchId: null, timer: null, retryTimer: null, generation: 0, startedAt: Date.now(), best: null, accepted: false, controller: null, finishing: false };
-    locationCapture = capture;
-    const active = () => locationCapture === capture && field.isConnected;
-    const finish = async error => {
-        if (!active() || capture.finishing) return;
-        capture.finishing = true;
-        stopLocationWatch(capture);
-        if (!capture.accepted) {
-            const messages = {
-                1: "Location access is blocked. Allow location in your browser's site settings and turn on device location services, then try again. No automatic pin was saved.",
-                2: "Your device could not determine a location. Turn on location services and allow precise location if available. No automatic pin was saved.",
-                3: "Location detection timed out without a precise reading. No automatic pin was saved. Try a phone with precise location enabled, or enter the household address."
-            };
-            cancelLocationCapture();
-            const message = error?.code !== 1 && capture.best
-                ? `Your device could only locate you within ${gpsAccuracyLabel(capture.best.accuracy)}; ${GPS_TARGET_ACCURACY_METERS} m or better is needed. No automatic pin was saved. Try a phone with precise location enabled, or enter the household address.`
-                : messages[error?.code] || messages[2];
-            setLocationStatus(field, message, "warning");
-            return;
-        }
-        const point = capture.best;
-        const guidance = `Location captured with an estimated accuracy of ${gpsAccuracyLabel(point.accuracy)}.`;
-        setLocationBusy(field, true, "Looking up address…");
-        setLocationStatus(field, `${guidance} Looking up a nearby address.`, "success");
-        const controller = new AbortController();
-        capture.controller = controller;
-        const lookupTimer = setTimeout(() => controller.abort(), 8000);
-        try {
-            const response = await fetch("/api/location/reverse", {
-                method: "POST", credentials: "same-origin",
-                headers: await authHeaders(true),
-                body: JSON.stringify({ latitude: point.latitude, longitude: point.longitude }), signal: controller.signal
-            });
-            if (!response.ok) throw new Error("Address lookup unavailable");
-            const result = await response.json();
-            if (!active()) return;
-            const address = typeof result.address === "string" ? result.address.trim().slice(0, 500) : "";
-            if (address) field.value = address;
-            setLocationStatus(field, `${guidance} ${address ? "Nearby address added." : "No nearby address was found; the pin is ready to submit."}`, "success");
-        }
-        catch {
-            if (active()) setLocationStatus(field, `${guidance} The address could not be loaded; your pin is ready to submit.`, "success");
-        }
-        finally {
-            clearTimeout(lookupTimer);
-            if (active()) { locationCapture = null; setLocationBusy(field, false); }
-        }
-    };
-    setLocationBusy(field, true);
-    setLocationStatus(field, `Finding precise location… Allow access when prompted. We will retry automatically for up to a minute until accuracy reaches ${GPS_TARGET_ACCURACY_METERS} m or better.`);
-    capture.timer = setTimeout(() => finish({ code: 3 }), GPS_CAPTURE_DEADLINE_MS);
-    const startWatch = () => {
-        if (!active() || capture.finishing) return;
-        clearTimeout(capture.retryTimer);
-        if (capture.watchId !== null) navigator.geolocation.clearWatch(capture.watchId);
-        capture.watchId = null;
-        const generation = ++capture.generation;
-        const current = () => active() && !capture.finishing && generation === capture.generation;
-        // Reacquire while stationary too: a watch may otherwise stop reporting after a coarse fix.
-        capture.retryTimer = setTimeout(startWatch, GPS_REACQUIRE_MS);
-        const onError = error => {
-            if (!current()) return;
-            if (error.code === 1) { finish(error); return; }
-            setLocationStatus(field, error.code === 3 ? "This reading timed out. Retrying automatically for a precise location…" : "Location is temporarily unavailable. Retrying automatically; keep device location services on.");
-            clearTimeout(capture.retryTimer);
-            capture.retryTimer = setTimeout(startWatch, 1000);
-        };
-        try {
-            const watchId = navigator.geolocation.watchPosition(position => {
-                if (!current()) return;
-                const { latitude, longitude, accuracy } = position.coords || {};
-                if (![latitude, longitude, accuracy, position.timestamp].every(Number.isFinite)
-                    || Math.abs(latitude) > 90 || Math.abs(longitude) > 180 || accuracy <= 0
-                    || position.timestamp < capture.startedAt - 1000 || position.timestamp > Date.now() + 1000) return;
-                if (capture.best && capture.best.accuracy <= accuracy) return;
-                capture.best = { latitude, longitude, accuracy };
-                if (accuracy > GPS_TARGET_ACCURACY_METERS) {
-                    setLocationStatus(field, `Improving location… Current estimate: within ${gpsAccuracyLabel(accuracy)}. Waiting for ${GPS_TARGET_ACCURACY_METERS} m or better; no pin has been saved yet.`);
-                    return;
-                }
-                capture.accepted = true;
-                // Only a sufficiently precise fix becomes a saved pin; address lookup is optional.
-                field.value = gpsCoordinates(capture.best);
-                field.dataset.coordinates = field.value;
-                field.dataset.accuracy = String(accuracy);
-                field.dataset.capturedAt = new Date(position.timestamp).toISOString();
-                updateLocationResult(field);
-                finish();
-            }, onError, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
-            // Synchronous or superseded callbacks must not leave an orphaned watch running.
-            if (current()) capture.watchId = watchId;
-            else navigator.geolocation.clearWatch(watchId);
-        }
-        catch { onError({ code: 2 }); }
-    };
-    startWatch();
-};
 function compressRequestPhoto(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -1367,22 +1227,16 @@ window.submitRequest = async e => {
         toast("Your household account must be approved before submitting a request.");
         return;
     }
-    if (locationCapture && !locationCapture.accepted) {
-        toast("Still finding a precise location. Wait for a reading within 10 m, or cancel location detection to continue without an automatic pin.");
-        return;
-    }
     const requests = getRequests();
-    const category = formValue("reqCategory"), contact = formValue("reqContact"), disaster = formValue("reqDisaster"), urgency = formValue("reqUrgency"), description = formValue("reqDescription"), locationField = document.getElementById("reqLocation"), location = formValue("reqLocation"), photoFiles = [...(document.getElementById("reqPhotos")?.files || [])];
-    const point = parseGpsCoordinates(locationField?.dataset.coordinates) || parseGpsCoordinates(location);
+    const category = formValue("reqCategory"), contact = formValue("reqContact"), disaster = formValue("reqDisaster"), urgency = formValue("reqUrgency"), description = formValue("reqDescription"), location = formValue("reqLocation"), photoFiles = [...(document.getElementById("reqPhotos")?.files || [])];
+    const point = parseGpsCoordinates(location);
     const coordinates = point ? gpsCoordinates(point) : "";
-    const accuracy = locationField?.dataset.accuracy === undefined ? null : Number(locationField.dataset.accuracy);
-    const gpsMetadata = point && Number.isFinite(accuracy) && accuracy >= 0 ? { gpsAccuracy: accuracy, gpsCapturedAt: locationField.dataset.capturedAt } : {};
     if (!BARANGAYS.includes(user.barangay) || !["Food", "Water", "Medical", "Shelter", "Utility"].includes(category) || !["Typhoon", "Flood", "Fire", "Landslide", "Earthquake", "Other"].includes(disaster) || !["Low", "Medium", "Urgent"].includes(urgency)) {
         toast("Select a valid barangay, category, incident type, and urgency.");
         return;
     }
-    if (!contact || contact.length > 60 || !description || description.length > 2000) {
-        toast("Enter a contact number and a description of up to 2,000 characters.");
+    if (!validPhilippineMobile(contact) || !description || description.length > 2000) {
+        toast("Enter a Philippine mobile number in 09XXXXXXXXX or +639XXXXXXXXX format and a description of up to 2,000 characters.");
         return;
     }
     if (location.length > 500) {
@@ -1397,10 +1251,6 @@ window.submitRequest = async e => {
     if (duplicate) {
         toast(`You already have an active ${category} request.`);
         return;
-    }
-    if (locationCapture) {
-        cancelLocationCapture();
-        setLocationStatus(locationField, "The displayed pin is ready to submit.");
     }
     let photos = [];
     try {
@@ -1419,7 +1269,6 @@ window.submitRequest = async e => {
             description,
             location: location || "Not provided",
             gps: coordinates || "Not provided",
-            ...gpsMetadata,
             photos
         });
         await refreshDashboardData(true);
@@ -1447,6 +1296,7 @@ function accountCards(accounts, actions = false) {
       <div class="request-meta"><span>Registered ${formatDate(account.createdAt)}</span></div>
       <div class="actions">
         <button class="btn btn-light btn-sm" onclick="openAccount(${toInlineJsArg(account.id)})">View details</button>
+        ${actions ? `<button class="btn btn-light btn-sm" onclick="viewResidencyProof(${toInlineJsArg(account.id)})">View residency proof</button>` : ""}
         ${actions ? `<button class="btn btn-primary btn-sm" onclick="approveHouseholdAccount(${toInlineJsArg(account.id)})">Approve</button>
           <button class="btn btn-light btn-sm" onclick="rejectHouseholdAccount(${toInlineJsArg(account.id)})">Reject</button>` : ""}
       </div>
@@ -1480,7 +1330,30 @@ window.openAccount = id => {
     <div class="kv"><strong>Email</strong><span>${escapeHtml(account.email)}</span></div>
     <div class="kv"><strong>Contact</strong><span>${escapeHtml(account.contact || "—")}</span></div>
     <div class="kv"><strong>Registered</strong><span>${formatDate(account.createdAt)}</span></div>
+    ${account.role === "HOUSEHOLD" && account.status === "PENDING" ? `<div class="kv"><strong>Proof of residence</strong><span><button class="btn btn-light btn-sm" type="button" onclick="viewResidencyProof(${toInlineJsArg(account.id)})">View residency proof</button></span></div>` : ""}
     ${account.rejectionReason ? `<div class="kv"><strong>Rejection reason</strong><span>${escapeHtml(account.rejectionReason)}</span></div>` : ""}`);
+};
+window.viewResidencyProof = async id => {
+    const actor = currentActor("DSWS_ADMIN") || currentActor("BARANGAY_OFFICIAL");
+    const account = getUsers().find(user => user.id === id);
+    if (!actor || !account || account.role !== "HOUSEHOLD" || account.status !== "PENDING" ||
+        !(actor.role === "DSWS_ADMIN" || account.barangay === actor.barangay)) {
+        toast("You cannot view this residency document.");
+        return;
+    }
+    try {
+        const document = await api(`/api/accounts/${encodeURIComponent(id)}/residency-proof`);
+        if (!["application/pdf", "image/jpeg", "image/png", "image/webp"].includes(document.mimeType) || typeof document.data !== "string") {
+            throw new Error("The server returned an invalid residency document.");
+        }
+        const dataUrl = `data:${document.mimeType};base64,${document.data}`;
+        const content = document.mimeType === "application/pdf"
+            ? `<a class="btn btn-primary" href="${dataUrl}" download="residency-proof.pdf">Download residency document</a>`
+            : `<img src="${dataUrl}" alt="Residency proof for ${escapeHtml(account.name)}" style="display:block;max-width:100%;max-height:70vh;margin:16px auto;object-fit:contain">`;
+        showModal(`<div class="modal-head"><div><div class="modal-eyebrow">Private document</div><h2>Residency proof</h2></div><button class="icon-btn" type="button" aria-label="Close dialog" onclick="closeModal()">${svg("close")}</button></div><p class="small">${escapeHtml(account.name)} · ${escapeHtml(account.barangay)}</p>${content}`);
+    } catch (error) {
+        toast(error.message);
+    }
 };
 async function reviewAccount(id, action, reason = "") {
     if (accountActions.has(id))
@@ -1810,7 +1683,7 @@ window.openDonorGroup = (barangay, category) => {
       ${donorGroupCounts(group)}${donorGroupStatuses(group)}
       <p class="small muted">Choose a household request to pledge support. Each pledge is tracked separately and reserved for 48 hours, including time awaiting barangay verification.</p>
       <div class="list">${group.requests.map(r => `<article class="request-card donor-group-member">
-        <div class="request-top"><div><h3>${escapeHtml(r.household)}</h3><div class="small muted">${escapeHtml(r.id)}</div></div><div class="donor-group-statuses">${urgencyBadge(r.urgency)}${badge(r.status)}</div></div>
+        <div class="request-top"><div><h3>${escapeHtml(r.household)}</h3><div class="small muted">${escapeHtml(transactionReference(r))}</div></div><div class="donor-group-statuses">${urgencyBadge(r.urgency)}${badge(r.status)}</div></div>
         <p>${escapeHtml(r.description)}</p><div class="request-meta"><span>${escapeHtml(r.disaster)}</span><span>${formatDate(r.createdAt)}</span></div>
         <div class="actions"><button class="btn btn-primary btn-sm" type="button" onclick="openDonorGroupMember(${toInlineJsArg(r.id)},'pledge')">Pledge support</button><button class="btn btn-light btn-sm" type="button" onclick="openDonorGroupMember(${toInlineJsArg(r.id)},'details')">Details</button></div>
       </article>`).join("")}</div>`);
@@ -1845,7 +1718,7 @@ window.openPledge = id => {
         return;
     }
     showModal(`<div class="modal-head"><h2>Pledge support</h2><button class="icon-btn" aria-label="Close dialog" onclick="closeModal()">${svg("close")}</button></div>
-  <p class="small">${escapeHtml(r.id)} • ${escapeHtml(r.barangay)} • ${escapeHtml(r.category)}</p>
+  <p class="small">${escapeHtml(transactionReference(r))} • ${escapeHtml(r.barangay)} • ${escapeHtml(r.category)}</p>
   <p class="small">Reserved for 48 hours from the time you pledge, including while verification is pending.</p>
   <form class="form-grid" onsubmit="submitPledge(event,${toInlineJsArg(id)})">
     <div class="field"><label for="pledgeType">Donation type</label><select id="pledgeType"><option>Items</option><option>Medical</option><option>Shelter</option><option>Other</option></select></div>
@@ -1862,8 +1735,8 @@ window.submitPledge = async (e, id) => {
         return;
     }
     const type = formValue("pledgeType"), amount = formValue("pledgeAmount");
-    if (!["Items", "Medical", "Shelter", "Other"].includes(type) || !amount || amount.length > 2000) {
-        toast("Select a donation type and enter details of up to 2,000 characters.");
+    if (!["Items", "Medical", "Shelter", "Other"].includes(type) || !amount || amount.length > 2000 || hasNegativeDonationAmount(amount)) {
+        toast("Enter donation details with a non-negative amount (up to 2,000 characters).");
         return;
     }
     expirePledges();
@@ -1912,8 +1785,8 @@ window.submitGeneralDonation = async e => {
         return;
     }
     const type = formValue("generalDonationType"), amount = formValue("generalDonationAmount"), barangay = formValue("generalDonationBarangay");
-    if (!["Items", "Water", "Food", "Medical", "Shelter", "Other"].includes(type) || !amount || amount.length > 2000) {
-        toast("Select a donation type and enter details of up to 2,000 characters.");
+    if (!["Items", "Water", "Food", "Medical", "Shelter", "Other"].includes(type) || !amount || amount.length > 2000 || hasNegativeDonationAmount(amount)) {
+        toast("Enter donation details with a non-negative amount (up to 2,000 characters).");
         return;
     }
     if (!BARANGAYS.includes(barangay)) {
@@ -2033,7 +1906,7 @@ function officialsPage() {
     return `<div class="dsws-overview">${dswsPageHeading("DSWS authorization", "Barangay Officials", "Approve official registrations or create the first approved official for a barangay.")}
     <div class="dsws-metrics dsws-metrics-three">${dswsMetric(pending.length, "Pending approval", dswsSymbol("clock"), "amber")}${dswsMetric(approved.length, "Approved officials", svg("shield"), "green")}${dswsMetric(new Set(approved.map(u => u.barangay)).size, "Barangays covered", svg("building"), "blue")}</div>
     <div class="dsws-panels dsws-panels-equal"><section class="dsws-panel">${dswsPanelHeading("Create approved official", svg("plus"))}<div class="dsws-panel-body">
-      <form class="form-grid" onsubmit="createOfficial(event)"><div class="field"><label for="officialName">Full name</label><input id="officialName" required placeholder="Barangay officer name"></div><div class="field"><label for="officialBarangay">Barangay</label><select id="officialBarangay" required><option value="">Select barangay</option>${barangayOptions()}</select></div><div class="field"><label for="officialContact">Contact number</label><input id="officialContact" required placeholder="09XX XXX XXXX"></div><div class="field"><label for="officialEmail">Email</label><input id="officialEmail" type="email" required placeholder="official@example.com"></div><div class="field"><label for="officialPassword">Temporary password</label><input id="officialPassword" type="password" minlength="8" required placeholder="At least 8 characters"></div><button class="btn btn-primary" type="submit">Create official account</button></form>
+      <form class="form-grid" onsubmit="createOfficial(event)"><div class="field"><label for="officialName">Full name</label><input id="officialName" required placeholder="Barangay officer name"></div><div class="field"><label for="officialBarangay">Barangay</label><select id="officialBarangay" required><option value="">Select barangay</option>${barangayOptions()}</select></div>      <div class="field"><label for="officialContact">Contact number</label><input id="officialContact" type="tel" autocomplete="tel" required placeholder="09XXXXXXXXX"></div><div class="field"><label for="officialEmail">Email</label><input id="officialEmail" type="email" required placeholder="official@example.com"></div><div class="field"><label for="officialPassword">Temporary password</label><input id="officialPassword" type="password" minlength="8" required placeholder="At least 8 characters"></div><button class="btn btn-primary" type="submit">Create official account</button></form>
     </div></section><section class="dsws-panel">${dswsPanelHeading("Pending registrations", dswsSymbol("clock"), "", pending.length)}<div class="dsws-panel-body">${officialCards(pending, true)}</div></section></div>
     <section class="dsws-panel">${dswsPanelHeading("Approved officials", svg("shield"), "", approved.length)}<div class="dsws-panel-body">${officialCards(approved)}</div></section></div>`;
 }
@@ -2044,7 +1917,7 @@ window.createOfficial = e => submitForm(e, "Creating official…", async () => {
         return;
     }
     const email = formValue("officialEmail").toLowerCase(), password = formValue("officialPassword", false), name = formValue("officialName"), barangay = formValue("officialBarangay"), contact = formValue("officialContact");
-    if (!name || name.length > 160 || !validEmail(email) || password.trim().length < 8 || !BARANGAYS.includes(barangay) || !contact || contact.length > 60) {
+    if (!name || name.length > 160 || !validEmail(email) || password.trim().length < 8 || !BARANGAYS.includes(barangay) || !validPhilippineMobile(contact)) {
         toast("Enter a name, barangay, contact, valid email, and password of at least 8 characters.");
         return;
     }
@@ -2272,6 +2145,18 @@ window.exportReport = async () => {
 function profilePanel(user) {
     return `<div class="dsws-overview">${dswsPageHeading("Account", "Profile", "Account information and verification status.")}
     ${user.role === "HOUSEHOLD" ? accountStatusPanel(user) : ""}
+    ${user.role === "HOUSEHOLD" && user.status === "PENDING" && !user.residencyProofSubmitted ? `<section class="dsws-panel dashboard-profile-panel">
+      ${dswsPanelHeading("Proof of residence", svg("shield"))}
+      <div class="dsws-panel-body"><p>Upload a barangay certificate/ID or another document showing your address (PDF, JPG, PNG, or WebP; up to 2 MB). It will only be available to authorized reviewers in your barangay and will be deleted after review.</p>
+        <form class="form-grid" onsubmit="uploadResidencyProof(event)">
+          <div class="field"><label for="profileResidencyProof">Residency document</label><input id="profileResidencyProof" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" required></div>
+          <button class="btn btn-primary" type="submit">Upload proof of residence</button>
+        </form>
+      </div>
+    </section>` : ""}
+    ${user.role === "HOUSEHOLD" && user.status === "PENDING" && user.residencyProofSubmitted ? `<section class="dsws-panel dashboard-profile-panel">
+      ${dswsPanelHeading("Proof of residence", svg("shield"))}<div class="dsws-panel-body"><p class="alert info">Your proof of residence has been submitted for review by ${escapeHtml(user.barangay)}.</p></div>
+    </section>` : ""}
     <section class="dsws-panel dashboard-profile-panel">
       ${dswsPanelHeading("Account details", svg("users"))}
       <div class="dsws-panel-body">
@@ -2297,12 +2182,29 @@ function profilePanel(user) {
       </div>
     </section></div>`;
 }
+window.uploadResidencyProof = event => submitForm(event, "Uploading…", async () => {
+    const user = currentActor("HOUSEHOLD");
+    if (!user || user.status !== "PENDING") {
+        toast("Only a pending household account can upload proof of residence.");
+        return;
+    }
+    const file = document.getElementById("profileResidencyProof")?.files?.[0];
+    if (!file) {
+        toast("Choose a residency document to upload.");
+        return;
+    }
+    const residencyProof = await readResidencyProof(file);
+    const { user: updatedUser } = await api(`/api/accounts/${encodeURIComponent(user.id)}/residency-proof`, { residencyProof });
+    cacheAccount(updatedUser);
+    toast("Proof of residence uploaded for review.");
+    render();
+});
 function requestTable(list, owner = false, actions = false, dsws = false) {
     if (!list.length)
         return `<div class="panel empty">No requests found.</div>`;
         return `<div class="table-wrap request-table-wrap"><table><thead><tr><th>Request</th><th>${owner ? "Barangay" : "Household"}</th><th>Need</th><th>Urgency</th><th>Status</th><th>Submitted</th><th>Action</th></tr></thead><tbody>${list.map(r => `
     <tr>
-            <td data-label="Request"><strong>${escapeHtml(r.id)}</strong><div class="small muted">${escapeHtml(r.disaster)}</div></td>
+            <td data-label="Request"><strong>${escapeHtml(transactionReference(r))}</strong><div class="small muted">${escapeHtml(r.disaster)}</div></td>
             <td data-label="${owner ? "Barangay" : "Household"}">${owner ? escapeHtml(r.barangay) : `${escapeHtml(r.household)}<div class="small muted">${escapeHtml(r.barangay)}</div>`}</td>
             <td data-label="Need">${escapeHtml(r.category)}</td>
             <td data-label="Urgency">${urgencyBadge(r.urgency)}</td>
@@ -2315,7 +2217,7 @@ function donationTable(list) {
     if (!list.length)
         return `<div class="panel empty">No donations yet.</div>`;
     return `<div class="table-wrap request-table-wrap donation-table-wrap"><table><thead><tr><th>Donation</th><th>Barangay</th><th>Request</th><th>Type</th><th>Details</th><th>Status</th><th>Date</th><th>Action</th></tr></thead><tbody>${list.map(d => `
-    <tr><td data-label="Donation"><strong>${escapeHtml(d.id)}</strong></td><td data-label="Barangay">${escapeHtml(d.barangay || "Community fund")}</td><td data-label="Request">${escapeHtml(d.requestId || "General donation")}</td><td data-label="Type">${escapeHtml(d.type)}</td><td data-label="Details">${escapeHtml(d.amount)}</td><td data-label="Status">${badge(d.status === "Reserved" ? "Pledged" : d.status)}</td><td data-label="Date">${formatDate(d.createdAt)}</td><td data-label="Action">${d.requestId ? `<div class="actions"><button class="btn btn-light btn-sm" onclick="openRequest(${toInlineJsArg(d.requestId)})">Details</button><button class="btn btn-light btn-sm" type="button" onclick="openDonationChat(${toInlineJsArg(d.id)})">Chat with barangay</button></div>` : `<div class="actions"><button class="btn btn-light btn-sm" onclick="openGeneralDonationDetails(${toInlineJsArg(d.id)})">Details</button><button class="btn btn-light btn-sm" onclick="openDonationChat(${toInlineJsArg(d.id)})">Chat</button></div>`}</td></tr>`).join("")} </tbody></table></div>`;
+    <tr><td data-label="Donation"><strong>${escapeHtml(transactionReference(d))}</strong></td><td data-label="Barangay">${escapeHtml(d.barangay || "Community fund")}</td><td data-label="Request">${escapeHtml(d.requestId ? requestReference(d.requestId) : "General donation")}</td><td data-label="Type">${escapeHtml(d.type)}</td><td data-label="Details">${escapeHtml(d.amount)}</td><td data-label="Status">${badge(d.status === "Reserved" ? "Pledged" : d.status)}</td><td data-label="Date">${formatDate(d.createdAt)}</td><td data-label="Action">${d.requestId ? `<div class="actions"><button class="btn btn-light btn-sm" onclick="openRequest(${toInlineJsArg(d.requestId)})">Details</button><button class="btn btn-light btn-sm" type="button" onclick="openDonationChat(${toInlineJsArg(d.id)})">Chat with barangay</button></div>` : `<div class="actions"><button class="btn btn-light btn-sm" onclick="openGeneralDonationDetails(${toInlineJsArg(d.id)})">Details</button><button class="btn btn-light btn-sm" onclick="openDonationChat(${toInlineJsArg(d.id)})">Chat</button></div>`}</td></tr>`).join("")} </tbody></table></div>`;
 }
 function generalDonationActions(donation) {
     if (donation.status !== "Pending Approval") {
@@ -2329,7 +2231,7 @@ function generalDonationList(list) {
     return `<div class="list">${list.map(d => `
     <div class="request-card">
       <div class="request-top">
-        <div><strong>${escapeHtml(d.id)}</strong><div class="small muted" style="margin-top:3px">${escapeHtml(d.donor)} • ${escapeHtml(d.barangay)}</div></div>
+        <div><strong>${escapeHtml(transactionReference(d))}</strong><div class="small muted" style="margin-top:3px">${escapeHtml(d.donor)} • ${escapeHtml(d.barangay)}</div></div>
         ${badge(d.status)}
       </div>
       <p>${escapeHtml(d.type)} • ${escapeHtml(d.amount)}</p>
@@ -2342,7 +2244,7 @@ function generalDonationConversationList(list) {
         return `<div class="empty">No reviewed donation conversations yet.</div>`;
     return `<div class="list">${list.map(donation => `
     <article class="request-card">
-      <div class="request-top"><div><strong>${escapeHtml(donation.donor)}</strong><div class="small muted">${escapeHtml(donation.id)} · ${escapeHtml(donation.type)}</div></div>${badge(donation.status)}</div>
+      <div class="request-top"><div><strong>${escapeHtml(donation.donor)}</strong><div class="small muted">${escapeHtml(transactionReference(donation))} · ${escapeHtml(donation.type)}</div></div>${badge(donation.status)}</div>
       <p>${escapeHtml(donation.amount)}</p>
       <div class="actions"><button class="btn btn-light btn-sm" type="button" onclick="openGeneralDonationDetails(${toInlineJsArg(donation.id)})">Details</button><button class="btn btn-light btn-sm" type="button" onclick="openDonationChat(${toInlineJsArg(donation.id)})">Chat</button></div>
     </article>`).join("")}</div>`;
@@ -2357,7 +2259,7 @@ window.openGeneralDonationDetails = id => {
         toast("You cannot view this donation.");
         return;
     }
-    showModal(`<div class="modal-head"><h2>${escapeHtml(donation.id)}</h2><button class="icon-btn" aria-label="Close dialog" onclick="closeModal()">${svg("close")}</button></div>
+    showModal(`<div class="modal-head"><h2>${escapeHtml(transactionReference(donation))}</h2><button class="icon-btn" aria-label="Close dialog" onclick="closeModal()">${svg("close")}</button></div>
     <div class="kv"><strong>Donor</strong><span>${escapeHtml(donation.donor)}</span></div>
     <div class="kv"><strong>Barangay</strong><span>${escapeHtml(donation.barangay || "—")}</span></div>
     <div class="kv"><strong>Type</strong><span>${escapeHtml(donation.type)}</span></div>
@@ -2499,7 +2401,7 @@ function requestChatContextHtml(request, actor) {
         Fulfilled: "Relief is marked as fulfilled. You can still follow up here."
     };
     return `<div class="request-chat-summary"><strong>${escapeHtml(request.category)} relief</strong>${badge(request.status)}</div>
-      <span>${escapeHtml(otherParty)}</span><span>${escapeHtml(request.id)}</span>
+      <span>${escapeHtml(otherParty)}</span><span>${escapeHtml(transactionReference(request))}</span>
       <ol class="request-chat-progress" aria-label="Relief progress">${["Approved", "Support pledged", "Fulfilled"].map((label, index) => `<li class="${index <= step ? "is-reached" : ""}"${index === step ? ' aria-current="step"' : ""}>${escapeHtml(label)}</li>`).join("")}</ol>
       <p>${escapeHtml(guidance[request.status] || "")}</p>
       ${request.fulfilledAt ? `<p>Fulfilled ${formatDate(request.fulfilledAt)}</p>` : ""}`;
@@ -2642,7 +2544,7 @@ window.openRequest = id => {
     const photos = Array.isArray(r.photos) ? r.photos.filter(photo => typeof photo === "string" && photo.length) : [];
     showModal(`<div class="request-details-view">
       <header class="modal-head request-detail-header">
-        <div><div class="request-detail-eyebrow">Household assistance</div><h2>Request details</h2><p class="request-reference">${escapeHtml(r.id)}</p></div>
+        <div><div class="request-detail-eyebrow">Household assistance</div><h2>Request details</h2><p class="request-reference">${escapeHtml(transactionReference(r))}</p></div>
         <button class="icon-btn request-close" type="button" aria-label="Close dialog" onclick="closeModal()">${svg("close")}</button>
       </header>
       <div class="request-detail-body">
@@ -2657,8 +2559,8 @@ window.openRequest = id => {
           <div class="request-info"><span>Contact number</span><strong>${escapeHtml(r.contact)}</strong></div>
           <div class="request-info"><span>Assistance category</span><strong>${escapeHtml(r.category)}</strong></div>
           <div class="request-info"><span>Incident type</span><strong>${escapeHtml(r.disaster)}</strong></div>
-          <div class="request-info request-info-wide"><span>Location</span><strong>${escapeHtml(r.location && r.location !== "Not provided" ? r.location : r.gps || "Not provided")}</strong>${parseGpsCoordinates(r.gps) || parseGpsCoordinates(r.location) ? `<div class="location-result">${gpsSummary(parseGpsCoordinates(r.gps) || parseGpsCoordinates(r.location), r.gpsAccuracy)}</div>` : ""}</div>
           <div class="request-info request-info-wide"><span>Submitted</span><strong>${formatDate(r.createdAt)}</strong></div>
+          <div class="request-info request-info-wide"><span>Household location</span><strong>${escapeHtml(r.location && r.location !== "Not provided" ? r.location : r.gps || "Not provided")}</strong>${(parseGpsCoordinates(r.gps) || parseGpsCoordinates(r.location)) ? `<div class="location-result">${gpsSummary(parseGpsCoordinates(r.gps) || parseGpsCoordinates(r.location), r.gpsAccuracy)}</div>` : ""}</div>
         </div>
         ${r.rejectionReason ? `<section class="request-detail-section request-rejection"><h3>Rejection reason</h3><p class="request-description">${escapeHtml(r.rejectionReason)}</p></section>` : ""}
         <section class="request-detail-section"><h3><span class="request-section-icon" aria-hidden="true">${svg("report")}</span>Request description</h3><p class="request-description">${escapeHtml(r.description)}</p></section>
@@ -2894,7 +2796,6 @@ function renderDashboardData(routeName, buildPage, setHtml) {
     }
 }
 function render() {
-    cancelLocationCapture();
     closeModal();
     try {
         if (!authState.ready) {
@@ -2981,11 +2882,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     finally { authState.ready = true; render(); }
 });
 window.addEventListener("hashchange", render);
-window.addEventListener("pagehide", () => {
-    const field = locationCapture?.field;
-    cancelLocationCapture();
-    if (field) setLocationStatus(field, field.dataset.coordinates ? "Location detection stopped. The displayed pin has been kept." : "Location detection stopped. Use precise location to try again.");
-});
 window.addEventListener("storage", e => {
     if (e.key === null || Object.values(STORAGE).includes(e.key))
         render();

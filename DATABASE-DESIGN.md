@@ -1,36 +1,64 @@
-# AYUDA CEBU Database Design
+# AYUDA CEBU database design
 
-This document describes the current SQLite schema used by the AYUDA CEBU server. The schema is created and incrementally upgraded by [`server/database.cjs`](server/database.cjs); authorization and transaction behavior are implemented in [`server/app.cjs`](server/app.cjs).
+This document describes the database that the current AYUDA CEBU server uses and a target design for evolving it safely. It is grounded in the live schema in [server/database.cjs](server/database.cjs) and behavior in [server/app.cjs](server/app.cjs). The running system uses SQLite; this document does not claim that recommended future constraints or tables are already implemented.
 
-## Entity Relationship Diagram
+## Scope and design goals
+
+AYUDA coordinates household assistance requests, barangay review, donor pledges and general donations, private conversations, notifications, account approval, authentication, and DSWS reporting.
+
+The design aims to:
+
+- Keep a household request as an individual, auditable case; donor browse groups are derived summaries, never merged requests.
+- Make ownership and barangay scoping explicit and enforceable.
+- Preserve lifecycle history and actor identity without relying on mutable display names.
+- Avoid storing secrets in clear text and avoid exposing sensitive location and contact data in reports.
+- Keep operational and authentication records distinct from relief transactions.
+- Support reliable concurrent updates and indexed dashboard/report queries.
+
+## Current implementation at a glance
+
+The current SQLite database has ten tables: `users`, `sessions`, `password_resets`, `rate_limits`, `requests`, `donations`, `request_messages`, `donation_messages`, and `notifications` (nine tables; the count is nine). Account role, account status, and role-specific profile attributes are embedded in `users.profile` JSON. Request photos are JSON data URLs in `requests.photos`. Request and donation states are text values validated primarily in the server. The schema reference below distinguishes current behavior from proposed improvements.
+
+## Entity relationship diagram
 
 ```mermaid
 erDiagram
-    USERS ||--o{ SESSIONS : authenticates
+    USERS ||--o{ SESSIONS : owns
+    USERS ||--o| HOUSEHOLD_PROFILES : has
+    USERS ||--o| DONOR_PROFILES : has
+    USERS ||--o| OFFICIAL_ASSIGNMENTS : receives
+    BARANGAYS ||--o{ OFFICIAL_ASSIGNMENTS : scopes
     USERS ||--o{ REQUESTS : submits
+    BARANGAYS ||--o{ REQUESTS : serves
+    REQUESTS ||--o{ REQUEST_PHOTOS : includes
+    REQUESTS ||--o{ REQUEST_EVENTS : records
+    USERS o|--o{ REQUEST_EVENTS : acts
+    REQUESTS ||--o{ DONATIONS : may_receive
     USERS ||--o{ DONATIONS : contributes
-    REQUESTS o|--o{ DONATIONS : may_receive
-    DONATIONS ||--o{ DONATION_MESSAGES : has_thread
-    USERS ||--o{ DONATION_MESSAGES : sends
-    REQUESTS ||--o{ REQUEST_MESSAGES : has_thread
+    DONATIONS ||--o{ DONATION_EVENTS : records
+    USERS o|--o{ DONATION_EVENTS : acts
+    REQUESTS ||--o{ REQUEST_MESSAGES : has
+    DONATIONS ||--o{ DONATION_MESSAGES : has
     USERS ||--o{ REQUEST_MESSAGES : sends
+    USERS ||--o{ DONATION_MESSAGES : sends
     USERS ||--o{ NOTIFICATIONS : receives
+    USERS ||--o{ ACCOUNT_EVENTS : records
+    USERS ||--o{ PASSWORD_RESETS : requests
 
     USERS {
         TEXT id PK
         TEXT email UK
         TEXT password_hash
-        TEXT profile_json
+        TEXT profile "current JSON profile"
     }
-    SESSIONS {
-        TEXT token_hash PK
-        TEXT user_id FK
-        INTEGER expires_at
+    BARANGAYS {
+        TEXT id PK "target"
+        TEXT name UK "target"
     }
     REQUESTS {
         TEXT id PK
         TEXT household_id FK
-        TEXT barangay
+        TEXT barangay "current name; target FK"
         TEXT status
         TEXT created_at
     }
@@ -38,219 +66,227 @@ erDiagram
         TEXT id PK
         TEXT donor_id FK
         TEXT request_id FK_nullable
-        TEXT barangay
         TEXT status
-        TEXT created_at
-    }
-    DONATION_MESSAGES {
-        TEXT id PK
-        TEXT donation_id FK
-        TEXT sender_id FK
-        TEXT message
-        TEXT created_at
-    }
-    REQUEST_MESSAGES {
-        TEXT id PK
-        TEXT request_id FK
-        TEXT sender_id FK
-        TEXT message
-        TEXT created_at
-    }
-    NOTIFICATIONS {
-        TEXT id PK
-        TEXT user_id FK
-        TEXT target_type
-        TEXT target_id
-        TEXT read_at_nullable
     }
 ```
 
-`PASSWORD_RESETS` and `RATE_LIMITS` are security/operational tables and have no entity relationship to the transaction tables.
+The diagram includes target entities such as `BARANGAYS`, `REQUEST_EVENTS`, and `REQUEST_PHOTOS`; these do not exist in the current schema. Today, `password_resets` is keyed by email, and the event tables described below are represented by current-row status fields and timestamps.
 
-## Tables
+## Current schema reference
 
-### `users`
+All timestamps in transaction tables are ISO 8601 text as produced by the server. Authentication expiry timestamps are Unix milliseconds. IDs are generated application-side with prefixes such as `ACC-`, `REQ-`, and `DON-`.
 
-Stores login identity and the user profile.
+### Identity and access
 
-| Column | Definition | Notes |
+#### `users`
+
+| Column | Type | Meaning |
 | --- | --- | --- |
-| `id` | `TEXT PRIMARY KEY` | Account identifier. |
-| `email` | `TEXT NOT NULL UNIQUE COLLATE NOCASE` | Case-insensitive unique login. |
-| `password_hash` | `TEXT NOT NULL` | Password hash; never the raw password. |
-| `profile` | `TEXT NOT NULL` | JSON profile containing role, status, name, and role-specific fields such as barangay/contact. |
+| `id` | TEXT PK | Account ID. |
+| `email` | TEXT NOT NULL UNIQUE COLLATE NOCASE | Case-insensitive login. |
+| `password_hash` | TEXT NOT NULL | Password hash only. |
+| `profile` | TEXT NOT NULL | JSON with name, role, status, barangay/contact where applicable, and created time. |
 
-Roles in the profile are `HOUSEHOLD`, `BARANGAY_OFFICIAL`, `DONOR`, and `DSWS_ADMIN`. Household and official accounts include a barangay; account status is stored in the profile JSON.
+Roles: `HOUSEHOLD`, `BARANGAY_OFFICIAL`, `DONOR`, `DSWS_ADMIN`. Household and official account approval is stored in this JSON profile. DSWS admins approve official accounts; donors are approved at registration in the current flow.
 
-### `sessions`
+#### `sessions`
 
-Stores server-side sessions. The browser receives the secret session token in an HttpOnly cookie; SQLite stores only its hash.
-
-| Column | Definition | Notes |
+| Column | Type | Meaning |
 | --- | --- | --- |
-| `token_hash` | `TEXT PRIMARY KEY` | Digest of the session token. |
-| `user_id` | `TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE` | Session owner. |
-| `expires_at` | `INTEGER NOT NULL` | Unix timestamp in milliseconds. |
+| `token_hash` | TEXT PK | Hash of the secret cookie token. |
+| `user_id` | TEXT FK → users | Session owner; cascades on user deletion. |
+| `expires_at` | INTEGER | Expiry in Unix milliseconds. |
 
-Index: `sessions_user(user_id)`.
+Index: `sessions_user(user_id)`. Session rows are removed when expired and when the account's password is reset or changed, subject to preserving the current session on a normal password change.
 
-### `password_resets`
+#### `password_resets`
 
-Stores the currently active recovery challenge for an email address.
+One active challenge per normalized email, keyed by `email` (NOCASE). Stores `challenge_id`, `code_hash`, `expires_at`, failed `attempts`, and `created_at`. It stores a hash, not the emailed recovery code.
 
-| Column | Definition | Notes |
+#### `rate_limits`
+
+Temporary hashed bucket key, request `count`, and `expires_at`. Used for operational throttling rather than domain history.
+
+### Relief operations
+
+#### `requests`
+
+One row per submitted household case.
+
+| Column | Type | Meaning |
 | --- | --- | --- |
-| `email` | `TEXT PRIMARY KEY COLLATE NOCASE` | Case-insensitive account lookup. |
-| `challenge_id` | `TEXT NOT NULL` | Identifies the active challenge. |
-| `code_hash` | `TEXT NOT NULL` | Hash of the recovery code, not the code itself. |
-| `expires_at` | `INTEGER NOT NULL` | Unix timestamp in milliseconds. |
-| `attempts` | `INTEGER NOT NULL DEFAULT 0` | Failed/used verification attempts. |
-| `created_at` | `INTEGER NOT NULL` | Unix timestamp in milliseconds. |
+| `id` | TEXT PK | Public request reference. |
+| `household_id` | TEXT FK → users | Submitting household. |
+| `household` | TEXT | Submitter name snapshot. |
+| `barangay` | TEXT | Barangay name snapshot and current scope value. |
+| `contact` | TEXT nullable | Contact snapshot. |
+| `category`, `disaster`, `urgency`, `description` | TEXT | Assistance classification and case details. |
+| `status` | TEXT | Current lifecycle state. |
+| `location`, `gps` | TEXT | Address/landmark and coordinate representation. |
+| `gps_accuracy` | REAL nullable | Device-reported accuracy, metres. |
+| `gps_captured_at` | TEXT nullable | Capture time. |
+| `photos` | TEXT JSON array | Up to three bounded image data URLs in current code. |
+| `rejection_reason` | TEXT nullable | Review explanation. |
+| `approved_at`, `approved_by`, `reviewed_by` | TEXT nullable | Approval/review data; names are snapshots, no actor FK. |
+| `pledged_at`, `pledged_by` | TEXT nullable | First active pledge summary fields. |
+| `fulfilled_at`, `fulfilled_by_id` | TEXT nullable | Fulfilment time and official ID (not currently declared as an FK). |
+| `created_at`, `updated_at` | TEXT | Submission and last update time. |
 
-### `rate_limits`
+Current states: `Under Verification`, `Approved`, `Pledged`, `Fulfilled`, `Rejected`. The application enforces allowed transitions. The DB does not currently constrain state values. An escalation is computed when a request remains under verification for at least 72 hours.
 
-Stores temporary request-limit buckets. The key is a digest of the relevant IP, account, or operation identifier.
+Indexes: `requests_household(household_id)`, `requests_barangay(barangay)`, `requests_status(status)`.
 
-| Column | Definition | Notes |
+#### `donations`
+
+A row represents either a general donation (`request_id IS NULL`) or a pledge to one request.
+
+| Column | Type | Meaning |
 | --- | --- | --- |
-| `key` | `TEXT PRIMARY KEY` | Hashed bucket key. |
-| `count` | `INTEGER NOT NULL` | Requests in the active window. |
-| `expires_at` | `INTEGER NOT NULL` | Unix timestamp in milliseconds. |
+| `id` | TEXT PK | Donation/pledge reference. |
+| `donor_id` | TEXT FK → users | Donor account. |
+| `request_id` | TEXT nullable FK → requests | Target request; deletion of request cascades to pledge. |
+| `donor` | TEXT | Donor name snapshot. |
+| `barangay` | TEXT | Receiving/reviewing barangay name. |
+| `type`, `amount` | TEXT | Contribution category and free-text quantity/description. |
+| `status` | TEXT | Lifecycle state. |
+| `created_at`, `expires_at` | TEXT | Submission and reservation expiry. |
+| `reviewed_by`, `reviewed_by_id` | TEXT nullable | Reviewer snapshot and account ID (no declared FK). |
+| `approved_at`, `rejected_at`, `rejection_reason` | TEXT nullable | General donation review outcome. |
+| `completed_at`, `cancelled_at`, `expired_at` | TEXT nullable | Pledge outcome times. |
 
-### `requests`
+General donation states: `Pending Approval`, `Approved`, `Rejected`. Pledge states: `Reserved`, `Completed`, `Cancelled`, `Expired`. Pledges reserve for 48 hours. A donor may not have more than one active reservation for the same request; current application logic checks this. Indexes: `donations_donor(donor_id)`, `donations_request(request_id)`, `donations_barangay_status(barangay, status)`.
 
-Stores household relief requests and their review/fulfilment history.
+### Collaboration and inbox
 
-| Column | Definition | Notes |
+#### `request_messages` and `donation_messages`
+
+Both tables store `id`, parent ID, `sender_id` FK to users, sender name/role snapshots, `message`, and `created_at`. A message is limited by the API to 2,000 characters. Thread indexes are `(request_id, created_at, id)` and `(donation_id, created_at, id)`. Request chat opens after request approval and remains available through fulfilment. Pledge/general-donation chat is private to its donor and approved officials in the donation's barangay. Current actor access rules are in the application.
+
+#### `notifications`
+
+Stores recipient `user_id` FK, event `type`, `title`, `body`, polymorphic `target_type` and `target_id`, `created_at`, and nullable `read_at`. The target is intentionally not an SQL FK today because it can refer to more than one parent table. Index: `notifications_user_unread(user_id, read_at, created_at)`. API access is scoped to the authenticated recipient.
+
+## Main workflows and transactional boundaries
+
+### Request review and fulfilment
+
+1. An approved household creates a request in its registered barangay. The server snapshots name/contact and starts it at `Under Verification`.
+2. An assigned approved barangay official approves or rejects it. A rejection cancels active reservations for the request.
+3. An approved request may receive one or more donor reservations. The first active reservation moves it to `Pledged`; expiry can return it to `Approved` if no active reservation remains.
+4. An official fulfils a pledged request. Active reservations become `Completed`, and the request becomes `Fulfilled`.
+5. Status changes and their notifications are written together where implemented. These operations should remain atomic.
+
+### General donations
+
+Donors submit a contribution to a barangay, which starts at `Pending Approval`. An official assigned there approves or rejects it. This lifecycle is separate from request-specific pledge lifecycle despite sharing the current `donations` table.
+
+### Conversations and notifications
+
+Request chat belongs to a request. Donation chat belongs to an individual donation/pledge. Messages and recipient notifications should commit atomically so the inbox cannot claim an event whose message failed to save.
+
+### DSWS reporting
+
+Reports aggregate status counts, fulfilment rate, escalation counts, active reservations, category needs, and barangay summaries. Reporting should query de-identified aggregates and must not include contact details, precise household coordinates, photos, or message contents.
+
+## Recommended target design
+
+The current schema is functional for a single-server prototype. For a stronger production design, make these changes in versioned migrations. They are recommendations, not present-day guarantees.
+
+### 1. Normalize identity and geography
+
+- Keep `users` for login identity and common account fields. Move role, approval status, name, contact, and barangay to typed columns or role profile tables.
+- Create `barangays(id, name, city, is_active)`; use stable IDs as foreign keys from official assignments and requests. Preserve a name snapshot only when historical display needs it.
+- Add `official_assignments(user_id, barangay_id, valid_from, valid_to, assigned_by)` to represent current and historical jurisdiction. Enforce one active assignment per official if the product requires exactly one.
+- Add `household_profiles(user_id, barangay_id, contact, ...)` and `donor_profiles(user_id, organization_name, contact, ...)` for role-specific data.
+
+This removes JSON extraction from authorization queries and reduces spelling drift in barangay names.
+
+### 2. Separate request photos and location
+
+- Replace base64 image blobs in JSON with `request_photos(id, request_id, storage_key, content_type, size_bytes, sha256, created_at)`. Store actual media in private object storage or a controlled file store; use an opaque key in SQL.
+- Store latitude and longitude as numeric columns (or a spatial type in a future spatial DB), plus accuracy, capture time, and source (`DEVICE`, `MANUAL`, `GEOCODED`). Keep precise coordinates private and expose only to authorized staff.
+- Apply retention limits and access logging to precise location, contact, and photos.
+
+### 3. Record lifecycle history explicitly
+
+Add append-only `request_events` and `donation_events` rows with entity ID, prior state, new state, actor ID, event type, reason, and timestamp. Do not make the event log the only source of current state; keep the current status on the entity for efficient reads. Write entity changes, history, and notifications in one transaction. Actor FKs should use `ON DELETE SET NULL` where legally appropriate, while preserving actor display snapshots.
+
+### 4. Model contributions as inventory when needed
+
+The current free-text `type` and `amount` cannot support dependable stock totals. If inventory, receipt, or distribution tracking becomes a requirement, introduce typed `contribution_items` and `distribution_records` with a unit, numeric quantity, and (where relevant) value/currency. Avoid interpreting free-text amounts as money.
+
+### 5. Strengthen relational constraints
+
+Use `CHECK` constraints for role/status/category values and nonnegative quantities. Add composite foreign keys or validated assignment joins so a barangay official cannot act outside their assigned barangay even if an application query is accidentally weakened. Keep authorization checks in the server as well; DB constraints are a second line of integrity.
+
+### 6. Improve authentication records
+
+Use a surrogate reset ID and `user_id` FK for password resets after account lookup, retaining normalized email only where needed for delivery/audit. Add creation/last-seen metadata for sessions and appropriate uniqueness/expiry indexes. Keep rate-limit buckets operational and ephemeral. Never persist raw session tokens or recovery codes.
+
+### 7. Clarify deletion, retention, and audit policy
+
+Avoid cascading deletion of fulfilled relief records or messages in a production system. Prefer account deactivation/anonymization and `ON DELETE RESTRICT`/nullable actor references for durable public-service records. Document retention periods for identity, recovery, location, photos, conversations, and audit events, then apply scheduled purging where appropriate. A legal/privacy review is needed before setting a real retention period.
+
+## Suggested target table catalog
+
+| Table | Purpose | Key relationships |
 | --- | --- | --- |
-| `id` | `TEXT PRIMARY KEY` | Request reference, generated with a `REQ-` prefix. |
-| `household_id` | `TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE` | Submitting household. |
-| `household` | `TEXT NOT NULL` | Name snapshot for display/history. |
-| `barangay` | `TEXT NOT NULL` | Assigned barangay. |
-| `contact` | `TEXT` | Contact snapshot. |
-| `category` | `TEXT NOT NULL` | Assistance category. |
-| `disaster` | `TEXT NOT NULL` | Incident type. |
-| `urgency` | `TEXT NOT NULL` | Request urgency. |
-| `description` | `TEXT NOT NULL` | Household explanation. |
-| `status` | `TEXT NOT NULL` | Application-managed request lifecycle. |
-| `location` | `TEXT DEFAULT ''` | Address/landmark. |
-| `gps` | `TEXT DEFAULT ''` | Coordinate string, if available. |
-| `gps_accuracy` | `REAL` | Reported coordinate accuracy in metres. |
-| `gps_captured_at` | `TEXT` | ISO 8601 capture time. |
-| `photos` | `TEXT NOT NULL DEFAULT '[]'` | JSON array of bounded image data URLs. |
-| `rejection_reason` | `TEXT` | Review explanation when rejected. |
-| `approved_at` | `TEXT` | ISO 8601 approval time. |
-| `approved_by` | `TEXT` | Approver name snapshot. |
-| `reviewed_by` | `TEXT` | Reviewer name snapshot. |
-| `pledged_at` | `TEXT` | First active pledge time. |
-| `pledged_by` | `TEXT` | First active donor name snapshot. |
-| `fulfilled_at` | `TEXT` | ISO 8601 fulfilment time. |
-| `fulfilled_by_id` | `TEXT` | Official account that fulfilled it. |
-| `created_at` | `TEXT NOT NULL` | ISO 8601 submission time. |
-| `updated_at` | `TEXT NOT NULL` | ISO 8601 last update time. |
+| `users` | Authentication identity, normalized email, password hash, account state | Parent of role profiles and sessions |
+| `household_profiles` | Household display/contact and barangay | `user_id → users`, `barangay_id → barangays` |
+| `donor_profiles` | Donor details | `user_id → users` |
+| `barangays` | Canonical jurisdiction directory | Parent of assignments and requests |
+| `official_assignments` | Current and past official jurisdiction | `user_id → users`, `barangay_id → barangays` |
+| `sessions` | Hashed-token sessions | `user_id → users` |
+| `password_resets` | Hashed, expiring recovery challenges | `user_id → users` |
+| `requests` | Household case and current state | Household, barangay, optional fulfiller |
+| `request_photos` | Private media metadata | `request_id → requests` |
+| `request_events` | Append-only review/status history | Request and nullable actor |
+| `donations` | General donations and request-specific pledges | Donor, optional request, barangay |
+| `donation_events` | Append-only review/reservation history | Donation and nullable actor |
+| `request_messages` | Household/barangay conversation | Request and sender |
+| `donation_messages` | Donor/barangay conversation | Donation and sender |
+| `notifications` | Per-user inbox entries | Recipient, typed parent reference or validated target |
+| `rate_limits` | Expiring operational throttle buckets | No domain FK |
 
-Indexes: `requests_household(household_id)`, `requests_barangay(barangay)`, and `requests_status(status)`.
+## Query and index plan
 
-Current request statuses are `Under Verification`, `Approved`, `Pledged`, `Fulfilled`, and `Rejected`. The application validates transitions; the database column itself does not have a `CHECK` constraint.
+Current indexes cover basic ownership, status, and thread access. Recommended additions (after measuring real query plans) include:
 
-### `donations`
+- `requests(status, barangay, created_at DESC)` for official queues and citywide filters.
+- `requests(household_id, created_at DESC)` for household history.
+- `donations(barangay, status, created_at DESC)` for official review queues.
+- A partial unique index on `donations(donor_id, request_id)` for active reservations, if the exact status/expiry semantics are designed so expired rows are first transitioned atomically.
+- `notifications(user_id, created_at DESC)` for inbox paging; retain the unread index for unread counts.
+- Thread indexes already sort by parent, creation time, and ID; use keyset pagination for large threads.
+- `request_events(request_id, created_at, id)` and `donation_events(donation_id, created_at, id)` for audit timelines.
 
-Stores both general donations and request-specific pledges. A `NULL request_id` identifies a general donation; otherwise the donation is linked to one household request.
+Validate additions with `EXPLAIN QUERY PLAN`; avoid adding indexes without evidence because each index increases write and storage cost.
 
-| Column | Definition | Notes |
-| --- | --- | --- |
-| `id` | `TEXT PRIMARY KEY` | Donation reference, generated with a `DON-` prefix. |
-| `donor_id` | `TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE` | Donor account. |
-| `request_id` | `TEXT REFERENCES requests(id) ON DELETE CASCADE` | Nullable; request-specific pledge when set. |
-| `donor` | `TEXT NOT NULL` | Donor name snapshot. |
-| `barangay` | `TEXT NOT NULL` | Barangay receiving/reviewing the contribution. |
-| `type` | `TEXT NOT NULL` | `Items`, `Water`, `Food`, `Medical`, `Shelter`, or `Other`. |
-| `amount` | `TEXT NOT NULL` | Description/quantity supplied by donor. |
-| `status` | `TEXT NOT NULL` | Application-managed donation lifecycle. |
-| `created_at` | `TEXT NOT NULL` | ISO 8601 submission time. |
-| `expires_at` | `TEXT` | Reservation deadline for a request pledge. |
-| `reviewed_by` | `TEXT` | Official name snapshot. |
-| `reviewed_by_id` | `TEXT` | Reviewing official account ID. |
-| `approved_at` | `TEXT` | General donation approval time. |
-| `rejected_at` | `TEXT` | General donation rejection time. |
-| `rejection_reason` | `TEXT` | Reason for rejection. |
-| `completed_at` | `TEXT` | Pledge completion time. |
-| `cancelled_at` | `TEXT` | Pledge cancellation time. |
-| `expired_at` | `TEXT` | Pledge expiry time. |
+## Integrity and operational notes
 
-Indexes: `donations_donor(donor_id)`, `donations_request(request_id)`, and `donations_barangay_status(barangay, status)`.
+- SQLite is opened with foreign keys enabled, WAL journaling, and a 5-second busy timeout.
+- The default file is `./data/ayuda.sqlite`; `DATABASE_PATH` overrides it.
+- The current setup creates tables/indexes with `IF NOT EXISTS` and additively adds three request columns. It does not have a formal schema version table or general migration runner.
+- Before changing table shape, back up the database and use ordered, idempotent migrations recorded in a `schema_migrations` table. Do not rely on `CREATE TABLE IF NOT EXISTS` alone to evolve a table.
+- Test migrations against a copy of a real database and an empty database. Preserve the existing `DATABASE_PATH` data.
+- Use transactions for multi-row lifecycle changes, notifications, and audit event inserts. Add an idempotency key to externally retried create operations if duplicate submissions become a real issue.
+- Backups must include a consistent SQLite snapshot (use the SQLite backup API or checkpoint-aware process), and restore procedures should be rehearsed.
+- SQLite fits the current single-process prototype. If deployed across multiple hosts or sustained concurrent writers become material, move to a client/server DB such as PostgreSQL using the same normalized relational model.
 
-General donation statuses are `Pending Approval`, `Approved`, and `Rejected`. Request pledge statuses include `Reserved`, `Completed`, `Cancelled`, and `Expired`. Status transitions are enforced by server handlers, not SQL `CHECK` constraints.
+## Known limits in the current database
 
-### `donation_messages`
+- Account fields are JSON and require application checks and `json_extract` queries.
+- Status fields are free text without DB constraints or durable transition events.
+- Barangay names are duplicated text rather than canonical foreign keys.
+- Request photos are large base64 strings inside the database.
+- Notification targets are polymorphic, so SQL cannot ensure their target exists.
+- Some reviewer fields are name snapshots; not all actor references are foreign keys.
+- Deleting a user or request cascades into historical records. This is convenient for test data but should be reconsidered for public-service retention.
+- Current chat access and role/barangay authorization are enforced by server handlers, not row-level security.
 
-Stores the private conversation associated with a general donation.
+## References in this repository
 
-| Column | Definition | Notes |
-| --- | --- | --- |
-| `id` | `TEXT PRIMARY KEY` | Message reference. |
-| `donation_id` | `TEXT NOT NULL REFERENCES donations(id) ON DELETE CASCADE` | Conversation thread. |
-| `sender_id` | `TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE` | Sender account. |
-| `sender_name` | `TEXT NOT NULL` | Name snapshot for display. |
-| `sender_role` | `TEXT NOT NULL` | Sender role snapshot. |
-| `message` | `TEXT NOT NULL` | Message text, limited by the API to 2,000 characters. |
-| `created_at` | `TEXT NOT NULL` | ISO 8601 send time. |
+- [Database creation and additive upgrades](server/database.cjs)
+- [Authorization, validation, and workflows](server/app.cjs)
+- [Product scope and operational notes](README.md)
 
-Index: `donation_messages_thread(donation_id, created_at, id)`. Messages are visible only to the donation's donor and approved officials assigned to that donation's barangay.
-
-### `request_messages`
-
-Stores each household request's conversation after approval.
-
-| Column | Definition | Notes |
-| --- | --- | --- |
-| `id` | `TEXT PRIMARY KEY` | Message reference. |
-| `request_id` | `TEXT NOT NULL REFERENCES requests(id) ON DELETE CASCADE` | Conversation thread. |
-| `sender_id` | `TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE` | Authenticated sender account. |
-| `sender_name` | `TEXT NOT NULL` | Name snapshot for display. |
-| `sender_role` | `TEXT NOT NULL` | Sender role snapshot. |
-| `message` | `TEXT NOT NULL` | Trimmed message text, limited by the API to 2,000 characters. |
-| `created_at` | `TEXT NOT NULL` | ISO 8601 send time. |
-
-Index: `request_messages_thread(request_id, created_at, id)`. The API permits only the approved household owner and approved officials assigned to the request's barangay, while the request is Approved, Pledged, or Fulfilled. Sender identity and timestamps come from the server. Messages and opposite-party notifications are written in one transaction.
-
-### `notifications`
-
-Stores per-user transaction and chat notifications.
-
-| Column | Definition | Notes |
-| --- | --- | --- |
-| `id` | `TEXT PRIMARY KEY` | Notification reference. |
-| `user_id` | `TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE` | Recipient account. |
-| `type` | `TEXT NOT NULL` | Application event type, such as request status, donation status, or chat message. |
-| `title` | `TEXT NOT NULL` | Short inbox heading. |
-| `body` | `TEXT NOT NULL` | Notification summary. |
-| `target_type` | `TEXT NOT NULL` | Application link type: `request`, `donation`, `chat` (donation conversation), or `request_chat` (household conversation). |
-| `target_id` | `TEXT NOT NULL` | Linked transaction ID. This is polymorphic and intentionally has no SQL foreign key. |
-| `created_at` | `TEXT NOT NULL` | ISO 8601 event time. |
-| `read_at` | `TEXT` | `NULL` means unread; otherwise ISO 8601 read time. |
-
-Index: `notifications_user_unread(user_id, read_at, created_at)`. Inbox APIs only return or update notifications for the authenticated recipient.
-
-## Relationships and Deletion Behavior
-
-- Deleting a user cascades to their sessions, requests, donations, messages they sent, and notifications they received.
-- Deleting a request cascades to its household conversation and request-specific donations; deleting those donations cascades to their messages.
-- General donations have `request_id = NULL` and remain independent of household requests.
-- `approved_by`, `reviewed_by`, and notification `target_id` are application-level references/snapshots rather than foreign keys.
-
-## Role-Scoped Data Access
-
-- A household reads its own requests and donations attached to those requests.
-- A donor reads their own donations and requests eligible for community support, plus requests they have pledged to.
-- A barangay official reads requests and donations for their assigned barangay. Donation chat is limited to the donor and approved officials for that barangay.
-- A DSWS admin reads citywide requests and donations. Notifications are still stored per recipient account.
-
-## Runtime and Migration Notes
-
-- Default database path: `./data/ayuda.sqlite`; `DATABASE_PATH` can override it.
-- SQLite is configured with foreign keys enabled, WAL journal mode, and a 5-second busy timeout.
-- Tables and indexes are created with `IF NOT EXISTS`. Older `requests` tables are upgraded additively for `pledged_at`, `pledged_by`, and `fulfilled_by_id` after inspecting `PRAGMA table_info`.
-- Session, recovery, and rate-limit expirations are integer milliseconds. Transaction, chat, and notification timestamps are ISO 8601 text.
-- The application periodically removes expired sessions, password resets, and rate-limit buckets. Expired request pledges are updated during relevant server reads/writes.
-- SQLite status and role fields are not SQL enums/check constraints; valid values and authorization are enforced in the application layer.

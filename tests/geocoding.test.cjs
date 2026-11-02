@@ -72,7 +72,8 @@ test('reverse geocoding requires an approved household session and a same-origin
   const app = await fixture(t);
   assert.equal((await app.request()).status, 401);
   for (const [role, status] of [['HOUSEHOLD', 'PENDING'], ['HOUSEHOLD', 'REJECTED'], ['DONOR', 'APPROVED'], ['DSWS_ADMIN', 'APPROVED']]) {
-    assert.equal((await app.request(app.account(role, status))).status, 403);
+    const expectedStatus = role === 'HOUSEHOLD' && status === 'REJECTED' ? 401 : 403;
+    assert.equal((await app.request(app.account(role, status))).status, expectedStatus);
   }
   const response = await app.request(app.account(), COORDINATES, { Origin: 'https://another.example.test' });
   assert.equal(response.status, 403);

@@ -13,14 +13,13 @@ const { createApp } = require('../server/app.cjs');
 
 const results = [], exceptions = [], requests = [], pending = new Map();
 const password = 'Tab-session-test-938!';
-const address = 'Synthetic household, Guadalupe, Cebu City, Philippines';
 const accounts = {
   admin: { name: 'Tab Test DSWS', email: 'tabs-admin@example.test', role: 'DSWS_ADMIN', route: '#/dsws' },
   official: { name: 'Tab Test Official', email: 'tabs-official@example.test', role: 'BARANGAY_OFFICIAL', route: '#/barangay' },
   household: { name: 'Tab Test Household', email: 'tabs-household@example.test', role: 'HOUSEHOLD', route: '#/household' },
   alternate: { name: 'Tab Test Other Household', email: 'tabs-other@example.test', role: 'HOUSEHOLD', route: '#/household' }
 };
-let browser, backend, server, origin, profile, buffer = '', nextId = 0, stderr = '', providerCalls = 0;
+let browser, backend, server, origin, profile, buffer = '', nextId = 0, stderr = '';
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const timeout = setTimeout(() => { console.error('Tab session browser verification timed out.'); browser?.kill(); process.exitCode = 1; }, 150000);
 
@@ -105,11 +104,7 @@ async function main() {
   origin = 'http://127.0.0.1:' + server.address().port;
   backend = await createApp({
     databasePath: ':memory:', appOrigin: origin, secureCookies: false,
-    admin: { ...accounts.admin, password },
-    geocoding: { fetch: async () => {
-      providerCalls++;
-      return new Response(JSON.stringify({ display_name: address }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    } }
+    admin: { ...accounts.admin, password }
   });
   server.on('request', backend.app);
   await register(accounts.official, 'Guadalupe');
@@ -193,16 +188,14 @@ async function main() {
       assert.equal(status, role === 'admin' ? 400 : 403);
     }
   });
-  await check('Household precise-location UI sends its tab selector to the direct reverse-geocoding fetch', async () => {
+  await check('Household request form keeps manual location entry without precise capture', async () => {
     const page = pages.household;
-    await cdp('Browser.grantPermissions', { origin, permissions: ['geolocation'] });
-    await cdp('Emulation.setGeolocationOverride', { latitude: 10.302076, longitude: 123.860442, accuracy: 8 }, page);
     await evaluate(page, 'location.hash = "#/household/request"');
-    await until(page, 'Boolean(document.getElementById("reqLocationButton"))', 'household request form');
-    await evaluate(page, 'document.getElementById("reqLocationButton").click()');
-    await until(page, `document.getElementById('reqLocation')?.value === ${JSON.stringify(address)}`, 'mocked nearby address');
-    assert.equal(providerCalls, 1);
-    assert.ok(requests.some(request => request.path === '/api/location/reverse' && request.tabId === ids.household));
+    await until(page, 'Boolean(document.querySelector("#reqPhotos"))', 'household request form');
+    const fields = await evaluate(page, '({location:!!document.getElementById("reqLocation"), precise:!!document.getElementById("reqLocationButton"), text:document.querySelector("#reqPhotos").form.innerText})');
+    assert.equal(fields.location, true);
+    assert.equal(fields.precise, false);
+    assert.match(fields.text, /household location/i);
     await identity(pages.admin, accounts.admin);
     await identity(pages.official, accounts.official);
   });
@@ -272,11 +265,11 @@ main().catch(error => {
   console.error(error.stack);
   process.exitCode = 1;
 }).finally(async () => {
-  const report = { checkedAt: new Date().toISOString(), passed: results.filter(result => result.pass).length, failed: results.filter(result => !result.pass).length, providerCalls, apiRequests: requests.length, results, exceptions };
+  const report = { checkedAt: new Date().toISOString(), passed: results.filter(result => result.pass).length, failed: results.filter(result => !result.pass).length, apiRequests: requests.length, results, exceptions };
   fs.writeFileSync(path.join(__dirname, 'tab-session-browser-results.json'), JSON.stringify(report, null, 2));
   if (browser) { try { await cdp('Browser.close'); } catch { browser.kill(); } }
   clearTimeout(timeout);
   if (server) await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); });
   if (backend) await backend.close();
-  console.log(JSON.stringify({ passed: report.passed, failed: report.failed, providerCalls }));
+  console.log(JSON.stringify({ passed: report.passed, failed: report.failed }));
 });

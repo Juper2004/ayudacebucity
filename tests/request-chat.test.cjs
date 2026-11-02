@@ -126,6 +126,10 @@ test('request chat isolates households and barangays and denies donors, administ
   const { household, official, donor } = participants(app);
   const relief = await app.createRequest(household, official);
   const path = `/api/requests/${relief.id}/messages`;
+  const negativePledge = await app.request('/api/donations', {
+    actor: donor, method: 'POST', body: { requestId: relief.id, type: 'Food', amount: '-2 food packs' },
+  });
+  assert.equal(negativePledge.status, 400, JSON.stringify(negativePledge.data));
   const others = [
     app.account('NEIGHBOR', 'HOUSEHOLD'),
     app.account('OTHER-OFFICIAL', 'BARANGAY_OFFICIAL', { barangay: 'Apas' }),
@@ -144,16 +148,17 @@ test('request chat isolates households and barangays and denies donors, administ
   for (const actor of [household, official]) {
     for (const status of ['PENDING', 'REJECTED']) {
       app.db.prepare("UPDATE users SET profile = json_set(profile, '$.status', ?) WHERE id = ?").run(status, actor.id);
-      assert.equal((await app.request(path, { actor })).status, 404, 'an existing session respects approval revocation');
-      assert.equal((await app.request(path, { actor, method: 'POST', body: { message: 'Blocked' } })).status, 404);
+      const expectedStatus = actor.role === 'HOUSEHOLD' && status === 'REJECTED' ? 401 : 404;
+      assert.equal((await app.request(path, { actor })).status, expectedStatus, 'an existing session respects approval revocation');
+      assert.equal((await app.request(path, { actor, method: 'POST', body: { message: 'Blocked' } })).status, expectedStatus);
     }
     app.db.prepare("UPDATE users SET profile = json_set(profile, '$.status', 'APPROVED') WHERE id = ?").run(actor.id);
   }
   assert.equal(app.db.prepare('SELECT COUNT(*) AS count FROM request_messages').get().count, 0);
   const ownRequest = await app.createRequest(others[0], official);
   await app.request(`/api/requests/${ownRequest.id}/messages`, { actor: others[0], method: 'POST', body: { message: 'Private neighbor message' } });
-  assert.deepEqual((await app.request(path, { actor: household })).data.messages, []);
-  assert.equal((await app.request(`/api/requests/${ownRequest.id}/messages`, { actor: household })).status, 404);
+  assert.equal((await app.request(path, { actor: household })).status, 401);
+  assert.equal((await app.request(`/api/requests/${ownRequest.id}/messages`, { actor: household })).status, 401);
 });
 
 test('unapproved and rejected requests never allow chat even when donor support exists', async t => {

@@ -24,6 +24,7 @@ function codeDigest(secret, email, challengeId, code) {
 function equalDigest(a, b) {
   return typeof a === 'string' && typeof b === 'string' && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
-function validEmail(email) { return typeof email === 'string' && email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email); }
+function validEmail(email) { return typeof email === 'string' && email.length <= 254 && /^[^\s@]+@[^\s@]+\.com$/i.test(email); }
+function validPhilippineMobile(phone) { return typeof phone === 'string' && /^(?:09\d{9}|\+639\d{9})$/.test(phone); }
 function validPassword(password) { return typeof password === 'string' && password.trim().length >= 8 && password.length <= 128; }
-module.exports = { hashPassword, verifyPassword, digest, codeDigest, equalDigest, validEmail, validPassword };
+module.exports = { hashPassword, verifyPassword, digest, codeDigest, equalDigest, validEmail, validPhilippineMobile, validPassword };

@@ -2,6 +2,7 @@
 const { DatabaseSync } = require('node:sqlite');
 const { mkdirSync } = require('node:fs');
 const { dirname, resolve } = require('node:path');
+const { formatReference, referenceDate } = require('./transaction-references.cjs');
 
 function openDatabase(filename) {
   if (filename !== ':memory:') mkdirSync(dirname(resolve(filename)), { recursive: true });
@@ -30,6 +31,12 @@ function openDatabase(filename) {
       attempts INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS residency_documents (
+      user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      mime_type TEXT NOT NULL,
+      content BLOB NOT NULL,
+      uploaded_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS rate_limits (
       key TEXT PRIMARY KEY,
       count INTEGER NOT NULL,
@@ -37,6 +44,7 @@ function openDatabase(filename) {
     );
     CREATE TABLE IF NOT EXISTS requests (
       id TEXT PRIMARY KEY,
+      reference_code TEXT UNIQUE,
       household_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       household TEXT NOT NULL,
       barangay TEXT NOT NULL,
@@ -77,6 +85,7 @@ function openDatabase(filename) {
     CREATE INDEX IF NOT EXISTS request_messages_thread ON request_messages(request_id, created_at, id);
     CREATE TABLE IF NOT EXISTS donations (
       id TEXT PRIMARY KEY,
+      reference_code TEXT UNIQUE,
       donor_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       request_id TEXT REFERENCES requests(id) ON DELETE CASCADE,
       donor TEXT NOT NULL,
@@ -124,6 +133,26 @@ function openDatabase(filename) {
   const requestColumns = new Set(db.prepare('PRAGMA table_info(requests)').all().map(column => column.name));
   for (const [name, type] of [['pledged_at', 'TEXT'], ['pledged_by', 'TEXT'], ['fulfilled_by_id', 'TEXT']]) {
     if (!requestColumns.has(name)) db.exec(`ALTER TABLE requests ADD COLUMN ${name} ${type}`);
+  }
+  for (const table of ['requests', 'donations']) {
+    const columns = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map(column => column.name));
+    if (!columns.has('reference_code')) db.exec(`ALTER TABLE ${table} ADD COLUMN reference_code TEXT`);
+    const prefix = table === 'requests' ? 'REQ' : 'DON';
+    const rows = db.prepare(`SELECT id, created_at, reference_code FROM ${table} ORDER BY created_at, id`).all();
+    const sequences = new Map();
+    const updateReference = db.prepare(`UPDATE ${table} SET reference_code = ? WHERE id = ?`);
+    for (const row of rows) {
+      const date = referenceDate(row.created_at);
+      const current = new RegExp(`^${prefix}-${date}-(\\d+)$`).exec(row.reference_code || '');
+      if (current) {
+        sequences.set(date, Math.max(sequences.get(date) || 0, Number(current[1])));
+      } else if (!row.reference_code) {
+        const sequence = (sequences.get(date) || 0) + 1;
+        sequences.set(date, sequence);
+        updateReference.run(formatReference(prefix, date, sequence), row.id);
+      }
+    }
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS ${table}_reference_code ON ${table}(reference_code)`);
   }
   return db;
 }
